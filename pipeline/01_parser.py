@@ -290,6 +290,9 @@ def parse_zip(file_path):
                 rel = os.path.relpath(inner_path, tmp_zip_dir)
                 result.append(f"[ZIP 내부: {rel}]\n{text}")
 
+    except RuntimeError:
+        # parse_pdf_batch가 raise한 환경 오류는 상위로 그대로 전파
+        raise
     except Exception as e:
         print(f"  [ZIP 오류] {file_path}: {e}")
     finally:

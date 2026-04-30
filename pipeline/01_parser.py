@@ -458,7 +458,7 @@ def parse_manual_files():
     pdf_to_process = []
     for fname in sorted(os.listdir(manual_dir)):
         ext = os.path.splitext(fname)[1].lower()
-        if ext == ".pdf" and not (fname in existing and existing[fname]):
+        if ext == ".pdf" and not existing.get(fname):
             pdf_to_process.append(os.path.join(manual_dir, fname))
 
     pdf_results = {}
@@ -474,9 +474,10 @@ def parse_manual_files():
             print(f"  [스킵] {fname}")
             continue
 
-        if fname in existing and existing[fname]:
-            print(f"  [캐시] {fname} ({len(existing[fname])}자)")
-            results.append({"file_name": fname, "parsed_text": existing[fname]})
+        cached_text = existing.get(fname)
+        if cached_text:
+            print(f"  [캐시] {fname} ({len(cached_text)}자)")
+            results.append({"file_name": fname, "parsed_text": cached_text})
             cached_count += 1
             continue
 

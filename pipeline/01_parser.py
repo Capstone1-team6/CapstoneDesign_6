@@ -76,11 +76,8 @@ def parse_pdf_batch(file_paths):
             base = os.path.splitext(os.path.basename(p))[0]
             new_stem = f"{i:04d}_{base}"
             new_path = os.path.join(in_dir, new_stem + ".pdf")
-            try:
-                shutil.copyfile(p, new_path)
-            except OSError as e:
-                print(f"  [PDF 복사 실패] {p}: {e}")
-                continue
+            # 복사 실패는 환경 문제(권한/디스크 등)이므로 OSError 가 자연스럽게 전파됨
+            shutil.copyfile(p, new_path)
             stem_to_orig[new_stem] = p
             copied_inputs.append(new_path)
 

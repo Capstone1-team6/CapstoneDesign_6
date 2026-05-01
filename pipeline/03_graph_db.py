@@ -322,12 +322,28 @@ def build_graph():
     # 노드가 많으면 배치로 나눠 처리
     BATCH = 80
     name_mapping: dict[str, str] = {}
+
+    # 1차 배치별 통합
     for start in range(0, len(unique_names), BATCH):
         batch_names = unique_names[start:start + BATCH]
         batch_map = consolidate_nodes(batch_names)
         name_mapping.update(batch_map)
         print(f"  배치 {start//BATCH + 1}: {len(batch_names)}개 처리 완료")
+    
+    # 2차 교차 통합
+    canonical_names = list(dict.fromkeys(name_mapping.values()))
+    print(f"\n[교차 통합] 1차 대표 이름 {len(canonical_names)}개 -> 최종 통합 중...")
 
+    if len(canonical_names) > 1:
+        final_map = consolidate_nodes(canonical_names)
+
+        # 원본 이름 -> 1차 대표 -> 최종 대표로 이어지도록 재매핑
+        name_mapping = {
+            orig: final_map.get(canonical, canonical)
+            for orig, canonical in name_mapping.items()
+        }
+        print(f"  최종 대표 이름 {len(set(name_mapping.values()))}개로 통합 완료")
+    
     # ── 3단계: 매핑 적용 후 Neo4j 저장 ────────────────────
     print("\n[저장] Neo4j에 노드·관계 저장 중...")
 

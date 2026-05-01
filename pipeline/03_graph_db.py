@@ -86,7 +86,8 @@ def extract_entities_and_relations(file_name: str, text: str) -> dict:
 
 ## 추출 규칙
 - 스키마를 고정하지 말고, 문서 내용에서 자연스럽게 나타나는 개념을 개체 타입으로 사용하세요.
-- 개체 타입은 짧고 명확한 영문 명사로 작성하세요 (예: Scholarship, GraduationRequirement, Course, Deadline, Department, Program, Student, Condition, Schedule, Rule).
+- 개체 타입은 문서에서 자연스럽게 드러나는 개념을 직접 반영한 짧고 명확한 영문 명사로 자유롭게 정하세요.
+- 미리 정해진 타입 목록은 없습니다. 문서 내용에 가장 잘 맞는 타입을 스스로 선택하세요.
 - 비슷한 의미의 개체는 하나로 통합하세요 (예: "졸업요건"과 "졸업 요건"은 동일 개체).
 - 날짜, 금액, URL, 자격 요건, 학점 등 세부적인 정보는 새로운 노드로 쪼개지 마세요. 반드시 관련 핵심 개체의 'properties' 목록에 key-value 형태로 깔끔하게 저장하세요.
 - 관계 타입은 동사 형태의 영문 대문자로 작성하세요 (예: REQUIRES, HAS_DEADLINE, PART_OF, APPLIES_TO, RELATED_TO, HAS_CONDITION, BELONGS_TO, OFFERS, TARGETS).
@@ -119,7 +120,7 @@ def extract_entities_and_relations(file_name: str, text: str) -> dict:
     try:
         response = upstage_client.chat.completions.create(
             model=EXTRACT_MODEL,
-            max_tokens=2048,
+            max_tokens=4096,
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.choices[0].message.content.strip()

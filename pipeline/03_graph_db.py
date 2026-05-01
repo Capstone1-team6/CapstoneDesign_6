@@ -213,14 +213,7 @@ def consolidate_nodes(all_node_names: list[str]) -> dict[str, str]:
 
 
 # ── Neo4j 저장 ───────────────────────────────────────────
-def create_document_node(session, file_name: str):
-    session.run("""
-        MERGE (d:Document {file_name: $file_name})
-        SET d.name = $file_name, d.title = $file_name
-    """, {"file_name": file_name})
-
-
-def upsert_entity(session, name: str, etype: str, props) -> str | None:
+def upsert_entity(session, name: str, etype: str, props, file_name: str = "") -> str | None:
     name = str(name).strip()
     if not name:
         return None
@@ -251,8 +244,17 @@ def upsert_entity(session, name: str, etype: str, props) -> str | None:
             safe_props[key] = "" if v is None else str(v)
 
     session.run(
-        f"MERGE (e:`{label}` {{name: $name}}) SET e += $props",
-        {"name": name, "props": safe_props}
+        f"""
+        MERGE (e:`{label}` {{name: $name}})
+        SET e += $props
+        SET e.source_files = 
+            CASE
+                WHEN $file_name IN coalesce(e.source_files, [])
+                THEN e.source_files
+                ELSE coalesce(e.source_files, []) + $file_name
+            END
+        """,
+        {"name": name, "props": safe_props, "file_name": file_name}
     )
     return name
 
@@ -349,8 +351,6 @@ def build_graph():
 
     with driver.session() as session:
         for file_name, extracted in extraction_results:
-            create_document_node(session, file_name)
-
             valid_names = set()
 
             for entity in extracted.get("entities", []):
@@ -359,15 +359,9 @@ def build_graph():
                     continue
                 # 통합된 대표 이름으로 교체
                 canonical = name_mapping.get(raw_name, raw_name)
-                created = upsert_entity(session, canonical, entity.get("type", "Entity"), entity.get("properties", {}))
+                created = upsert_entity(session, canonical, entity.get("type", "Entity"), entity.get("properties", {}), file_name)
                 if created:
                     valid_names.add(canonical)
-
-                    session.run("""
-                        MATCH (d:Document {file_name: $file_name})
-                        MATCH (e {name: $name})
-                        MERGE (d)-[:MENTIONS]->(e)
-                    """, {"file_name": file_name, "name": canonical})
 
             for rel in extracted.get("relations", []):
                 from_raw = str(rel.get("from", "")).strip()
@@ -409,10 +403,10 @@ def search_graph(keyword: str):
             MATCH (n)-[r]->(m)
             WHERE coalesce(n.name, '') CONTAINS $keyword
                 OR coalesce(n.title, '') CONTAINS $keyword
-                OR coalesce(n.file_name, '') CONTAINS $keyword
+                OR ANY(f IN coalesce(n.source_files, []) WHERE f CONTAINS $keyword)
                 OR coalesce(m.name, '') CONTAINS $keyword
                 OR coalesce(m.title, '') CONTAINS $keyword
-                OR coalesce(m.file_name, '') CONTAINS $keyword
+                OR ANY(f IN coalesce(m.source_files, []) WHERE f CONTAINS $keyword)
             RETURN
                 coalesce(n.name, n.title, n.file_name, '') AS from_node,
                 type(r) AS rel,

@@ -234,6 +234,8 @@ def merge_results(vector_docs, graph_relations):
 # ── LLM 답변 생성 ─────────────────────────────────────────
 def generate_answer(query, context, model="solar-pro"):
     """컨텍스트 기반 LLM 답변 생성"""
+    if not context.strip():
+        return "해당 정보를 찾을 수 없습니다."
     prompt = f"""당신은 경북대학교 컴퓨터학부 학생들을 위한 AI 챗봇입니다.
 아래 검색된 문서 내용과 그래프 관계 정보를 바탕으로 질문에 답변하세요.
 반드시 검색 결과에 근거해서만 답변하세요.

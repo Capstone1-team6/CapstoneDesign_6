@@ -271,18 +271,28 @@ def hybrid_rag(query, use_vector=True, use_graph=True, verbose=True):
     graph_relations = []
 
     if use_vector:
-        vector_docs = vector_search(query, n_results=3)
-        if verbose:
-            print(f"\n[Vector 검색] {len(vector_docs)}개 문서 검색됨")
-            for doc in vector_docs:
-                print(f"  - {doc['source']} (유사도: {doc['score']})")
+        try:
+            vector_docs = vector_search(query, n_results=3)
+            if verbose:
+                print(f"\n[Vector 검색] {len(vector_docs)}개 문서 검색됨")
+                for doc in vector_docs:
+                    print(f"  - {doc['source']} (유사도: {doc['score']})")
+        except Exception as e:
+            if verbose:
+                print(f"\n[Vector 검색 오류] {e}")
+            vector_docs = []
 
     if use_graph:
-        graph_relations = graph_search(query)
-        if verbose:
-            print(f"\n[Graph 검색] {len(graph_relations)}개 관계 탐색됨")
-            for rel in graph_relations[:5]:
-                print(f"  - {rel['from']} --[{rel['relation']}]--> {rel['to']}")
+        try:
+            graph_relations = graph_search(query)
+            if verbose:
+                print(f"\n[Graph 검색] {len(graph_relations)}개 관계 탐색됨")
+                for rel in graph_relations[:5]:
+                    print(f"  - {rel['from']} --[{rel['relation']}]--> {rel['to']}")
+        except Exception as e:
+            if verbose:
+                print(f"\n[Graph 검색 오류] {e}")
+            graph_relations = []
 
     context = merge_results(vector_docs, graph_relations)
     answer = generate_answer(query, context, model = "solar-pro")

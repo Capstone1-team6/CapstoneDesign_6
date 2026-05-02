@@ -5,6 +5,7 @@ import subprocess
 import shutil
 import tempfile
 import pandas as pd
+import pdfplumber
 import opendataloader_pdf
 from docx import Document
 
@@ -24,8 +25,146 @@ LIBREOFFICE    = r"C:\Program Files\LibreOffice\program\soffice.exe"
 USE_HYBRID = False   # 스캔 PDF 포함 시 True
 HYBRID_BACKEND = "docling-fast"   # USE_HYBRID=True 시 사용
 
+# ── pdfplumber 표 추출 옵션 ───────────────────────────────────────────────────
+# opendataloader 결과에서 표가 몇 개 이상 발견되면 pdfplumber 보강을 생략할지 결정하는 임계값.
+# 0으로 설정하면 항상 pdfplumber 결과를 병합합니다 (가장 안전).
+TABLE_SUPPLEMENT_THRESHOLD = 0
+
+# pdfplumber 표 추출 시 사용할 설정 (선 기반 표에 최적화)
+# "lattice" : 셀 경계선이 명확한 표에 적합 (기본값)
+# "stream"  : 선이 없고 공백으로 구분된 표에 적합
+PDFPLUMBER_TABLE_SETTINGS_LATTICE: dict = {
+    "vertical_strategy":   "lines",
+    "horizontal_strategy": "lines",
+    "snap_tolerance":       3,
+    "join_tolerance":       3,
+    "edge_min_length":      3,
+    "min_words_vertical":   1,
+    "min_words_horizontal": 1,
+}
+PDFPLUMBER_TABLE_SETTINGS_STREAM: dict = {
+    "vertical_strategy":   "text",
+    "horizontal_strategy": "text",
+    "snap_tolerance":       3,
+    "join_tolerance":       3,
+}
+
 os.makedirs(PARSED_DIR, exist_ok=True)
 os.makedirs(TMP_DIR, exist_ok=True)
+
+
+# ── pdfplumber 표 추출 헬퍼 ──────────────────────────────────────────────────
+
+def _table_to_markdown(table: list[list[str | None]], page_num: int, tbl_idx: int) -> str:
+    """
+    2D 리스트 형태의 표를 Markdown 표 문자열로 변환합니다.
+    - None 셀 → 빈 문자열 처리
+    - 빈 행 제거
+    - 첫 행을 헤더로 사용
+    """
+    # None 처리 및 공백 정리
+    cleaned: list[list[str]] = []
+    for row in table:
+        clean_row = [str(cell).strip() if cell is not None else "" for cell in row]
+        if any(cell for cell in clean_row):   # 빈 행 제거
+            cleaned.append(clean_row)
+
+    if not cleaned:
+        return ""
+
+    # 열 수 통일 (병합 셀 등으로 열 수가 다를 경우 대비)
+    max_cols = max(len(row) for row in cleaned)
+    normalized = [row + [""] * (max_cols - len(row)) for row in cleaned]
+
+    header   = normalized[0]
+    body     = normalized[1:]
+    md_lines = [
+        f"<!-- 표 p.{page_num}-{tbl_idx + 1} -->",
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join(["---"] * max_cols) + " |",
+    ]
+    for row in body:
+        md_lines.append("| " + " | ".join(row) + " |")
+
+    return "\n".join(md_lines)
+
+
+def _extract_tables_pdfplumber(file_path: str) -> list[str]:
+    """
+    pdfplumber로 PDF 내 모든 표를 추출하여 Markdown 문자열 리스트로 반환합니다.
+
+    추출 전략:
+      1차) lattice 전략: 셀 경계선이 명확한 표 (한국 공문서·보고서 형식에 적합)
+      2차) stream  전략: lattice에서 발견되지 않았을 경우 텍스트 간격 기반으로 재시도
+           → 두 전략의 결과가 중복되면 lattice 결과 우선
+
+    Returns:
+        Markdown 표 문자열 리스트 (페이지 순서 유지)
+    """
+    tables_md: list[str] = []
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            for page_num, page in enumerate(pdf.pages, 1):
+                # 1차: lattice (선 기반)
+                lattice_tables = page.extract_tables(
+                    table_settings=PDFPLUMBER_TABLE_SETTINGS_LATTICE
+                )
+                # 2차: stream (텍스트 기반) — lattice에서 표가 없을 때만 시도
+                if lattice_tables:
+                    page_tables = lattice_tables
+                else:
+                    stream_tables = page.extract_tables(
+                        table_settings=PDFPLUMBER_TABLE_SETTINGS_STREAM
+                    )
+                    page_tables = stream_tables if stream_tables else []
+
+                for tbl_idx, table in enumerate(page_tables):
+                    if not table:
+                        continue
+                    md = _table_to_markdown(table, page_num, tbl_idx)
+                    if md:
+                        tables_md.append(md)
+
+    except Exception as e:
+        print(f"  [pdfplumber 표 추출 오류] {os.path.basename(file_path)}: {e}")
+
+    return tables_md
+
+
+def _count_md_tables(text: str) -> int:
+    """Markdown 텍스트 내 표 개수를 구분선 행(| --- |) 기준으로 셉니다."""
+    return text.count("| --- |") + text.count("|---|") + text.count("| ---")
+
+
+def _supplement_tables(base_text: str, file_path: str) -> str:
+    """
+    opendataloader_pdf 출력(base_text)에 pdfplumber 표를 보강합니다.
+
+    보강 로직:
+      - base_text에서 Markdown 표 개수를 확인
+      - pdfplumber 추출 표 개수가 TABLE_SUPPLEMENT_THRESHOLD 초과이면 생략
+      - 그렇지 않으면 pdfplumber 표를 '보완 표' 섹션으로 뒤에 추가
+
+    왜 append 방식인가:
+      - opendataloader가 읽기 순서를 보장하므로 본문 텍스트는 그대로 유지
+      - 표만 누락된 경우 뒤에 별도 블록으로 추가해 RAG 청킹이 혼동 없이 참조 가능
+    """
+    plumber_tables = _extract_tables_pdfplumber(file_path)
+    if not plumber_tables:
+        return base_text
+
+    existing_count = _count_md_tables(base_text)
+    if existing_count > TABLE_SUPPLEMENT_THRESHOLD:
+        # opendataloader가 이미 표를 충분히 추출했으면 보강 생략
+        return base_text
+
+    supplement = (
+        "\n\n---\n"
+        "## [보완 표 — pdfplumber 추출]\n\n"
+        + "\n\n".join(plumber_tables)
+    )
+    print(f"    → pdfplumber 표 {len(plumber_tables)}개 보강")
+    return base_text + supplement
 
 
 # ── PDF 파싱 (opendataloader-pdf) ──────────────────────────────────────────────
@@ -48,12 +187,15 @@ def _odl_convert_batch(pdf_paths: list[str], output_dir: str) -> None:
 
 def parse_pdf(file_path: str) -> str:
     """
-    단일 PDF → Markdown 텍스트 추출 (opendataloader-pdf 사용).
+    단일 PDF → Markdown 텍스트 추출.
+
+    파싱 전략 (2단계):
+      1) opendataloader_pdf: 읽기 순서(XY-Cut++) 및 표 구조 보존 (주 파서)
+      2) pdfplumber: opendataloader 결과에 표가 부족하면 표만 보강 (보조 파서)
 
     변경 이유:
-      - pdfplumber 대비 읽기 순서(XY-Cut++) 및 표 구조 보존 정확도 우수
-      - 벤치마크 #1 (overall 0.90, 표 0.93)
-      - 한국어 스캔 PDF는 hybrid + OCR 모드로 처리 가능
+      - 기존: opendataloader만 사용 → 선 없는 표, 병합 셀 표 누락 가능
+      - 개선: pdfplumber의 lattice/stream 이중 전략으로 누락 표를 보완
       - 단일 호출 시 JVM 오버헤드 발생 → 배치 처리 권장 (parse_all 참고)
     """
     try:
@@ -63,16 +205,33 @@ def parse_pdf(file_path: str) -> str:
             md_path = os.path.join(tmp_out, base + ".md")
             if os.path.exists(md_path):
                 with open(md_path, encoding="utf-8") as f:
-                    return f.read().strip()
+                    text = f.read().strip()
+                return _supplement_tables(text, file_path)
+
             print(f"  [PDF 경고] Markdown 출력 없음: {os.path.basename(file_path)}")
+            # opendataloader 실패 시 pdfplumber 단독으로 표 추출 시도
+            tables = _extract_tables_pdfplumber(file_path)
+            if tables:
+                print(f"  [PDF 폴백] pdfplumber로 표 {len(tables)}개 추출")
+                return "\n\n".join(tables)
+
     except Exception as e:
         print(f"  [PDF 오류] {file_path}: {e}")
+        # 예외 발생 시 pdfplumber 단독 폴백
+        try:
+            tables = _extract_tables_pdfplumber(file_path)
+            if tables:
+                print(f"  [PDF 폴백] pdfplumber로 표 {len(tables)}개 추출")
+                return "\n\n".join(tables)
+        except Exception as e2:
+            print(f"  [PDF 폴백 오류] {file_path}: {e2}")
     return ""
 
 
 def parse_pdf_batch(pdf_map: dict[str, str]) -> dict[str, str]:
     """
     여러 PDF를 한 번의 JVM 호출로 파싱합니다 (권장 방식).
+    각 파일에 대해 pdfplumber 표 보강을 추가로 수행합니다.
 
     Args:
         pdf_map: {원본_경로: 파일명} 딕셔너리
@@ -93,14 +252,27 @@ def parse_pdf_batch(pdf_map: dict[str, str]) -> dict[str, str]:
                 md_path = os.path.join(tmp_out, base + ".md")
                 if os.path.exists(md_path):
                     with open(md_path, encoding="utf-8") as f:
-                        results[file_path] = f.read().strip()
+                        text = f.read().strip()
+                    results[file_path] = _supplement_tables(text, file_path)
                 else:
                     print(f"  [PDF 경고] Markdown 출력 없음: {os.path.basename(file_path)}")
-                    results[file_path] = ""
+                    # opendataloader 실패 시 pdfplumber 단독 폴백
+                    tables = _extract_tables_pdfplumber(file_path)
+                    results[file_path] = "\n\n".join(tables) if tables else ""
+
     except Exception as e:
         print(f"  [PDF 배치 오류] {e}")
-        for p in pdf_paths:
-            results.setdefault(p, "")
+        # 배치 전체 실패 시 각 파일별 pdfplumber 폴백
+        for file_path in pdf_paths:
+            if file_path not in results:
+                try:
+                    tables = _extract_tables_pdfplumber(file_path)
+                    results[file_path] = "\n\n".join(tables) if tables else ""
+                    if tables:
+                        print(f"  [PDF 폴백] {os.path.basename(file_path)}: pdfplumber로 표 {len(tables)}개 추출")
+                except Exception as e2:
+                    print(f"  [PDF 폴백 오류] {file_path}: {e2}")
+                    results.setdefault(file_path, "")
     return results
 
 
@@ -204,7 +376,7 @@ def parse_zip(file_path: str) -> str:
                 else:
                     non_pdf_items.append((inner_path, fname))
 
-        # PDF 배치 변환
+        # PDF 배치 변환 (pdfplumber 표 보강 포함)
         if pdf_paths:
             pdf_results = parse_pdf_batch(pdf_paths)
             for inner_path, text in pdf_results.items():
@@ -290,7 +462,7 @@ def parse_all() -> None:
                 att["parsed_text"] = parse_file(file_path)
                 print(f"  완료: {len(att['parsed_text'])}자 추출")
 
-        # ② PDF 배치 처리
+        # ② PDF 배치 처리 (pdfplumber 표 보강 포함)
         if pdf_att_map:
             pdf_results = parse_pdf_batch(
                 {p: a["name"] for p, a in pdf_att_map.items()}
@@ -355,7 +527,7 @@ def parse_manual_files() -> None:
         else:
             non_pdf.append(fname)
 
-    # ② PDF 배치 변환
+    # ② PDF 배치 변환 (pdfplumber 표 보강 포함)
     if pdf_files:
         print(f"  PDF 배치 변환 중 ({len(pdf_files)}개)...")
         pdf_results = parse_pdf_batch(pdf_files)

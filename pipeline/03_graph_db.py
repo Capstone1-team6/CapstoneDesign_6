@@ -14,10 +14,10 @@ load_dotenv(ENV_PATH)
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password1234")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+UPSTAGE_API_KEY = os.getenv("UPSTAGE_API_KEY")
 
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
-EXTRACT_MODEL = "gpt-4o-mini"
+upstage_client = OpenAI(api_key=UPSTAGE_API_KEY, base_url="https://api.upstage.ai/v1")
+EXTRACT_MODEL = "solar-pro"   # 개체·관계 추출 및 노드 통합에 사용
 
 
 def get_driver():
@@ -113,9 +113,11 @@ def safe_json_load(text: str):
     return json.loads(text)
 
 
+# ── Step 1: 개체·관계 자동 추출 (solar-pro, 동적 스키마) ──────
 def extract_entities_and_relations(file_name: str, text: str) -> dict:
+    """solar-pro를 사용해 문서에서 개체·관계를 동적으로 추출 (스키마 고정 없음)"""
     prompt = f"""당신은 대학 행정 문서에서 지식 그래프를 구축하는 전문가입니다.
-아래 경북대학교 컴퓨터학부 문서를 읽고, 의미 있는 개체(노드)와 개체 간 관계(엣지)를 추출하세요.
+아래 경북대학교 문서를 읽고, 의미 있는 개체(노드)와 개체 간 관계(엣지)를 추출하세요.
 
 파일명: {file_name}
 문서 내용:
@@ -123,13 +125,26 @@ def extract_entities_and_relations(file_name: str, text: str) -> dict:
 
 ## 추출 규칙
 - 스키마를 고정하지 말고, 문서 내용에서 자연스럽게 나타나는 개념을 개체 타입으로 사용하세요.
-- 개체 타입은 짧고 명확한 영문 명사로 작성하세요.
-- 비슷한 의미의 개체는 하나로 통합하세요.
-- 관계 타입은 동사 형태의 영문 대문자로 작성하세요.
+- 개체 타입은 문서에서 자연스럽게 드러나는 개념을 직접 반영한 짧고 명확한 영문 명사로 자유롭게 정하세요.
+- 미리 정해진 타입 목록은 없습니다. 문서 내용에 가장 잘 맞는 타입을 스스로 선택하세요.
+- 비슷한 의미의 개체는 하나로 통합하세요 (예: "졸업요건"과 "졸업 요건"은 동일 개체).
+- 날짜, 금액, URL, 자격 요건, 학점 등 세부적인 정보는 새로운 노드로 쪼개지 마세요. 반드시 관련 핵심 개체의 'properties' 목록에 key-value 형태로 깔끔하게 저장하세요.
+- 관계 타입은 동사 형태의 영문 대문자로 작성하세요 (예: REQUIRES, HAS_DEADLINE, PART_OF, APPLIES_TO, RELATED_TO, HAS_CONDITION, BELONGS_TO, OFFERS, TARGETS).
 - name이 비어 있는 개체는 만들지 마세요.
 - 홍길동처럼 예시용 이름이나 테스트용 placeholder 이름은 개체로 만들지 마세요.
 - 확실하지 않은 관계는 억지로 만들지 마세요.
 - relation의 from·to는 반드시 entities의 name 중 하나여야 합니다.
+
+[Few-shot 예시]
+문서: "2026학년도 소프트웨어융합전공 산학프로젝트(3학점) 결과보고서 제출 안내. 기한은 6월 15일까지이며, 우수팀에게는 SW교육원에서 50만원의 장학금을 지급합니다."
+추출 논리:
+- Entity 1: name="소프트웨어융합전공", type="Major"
+- Entity 2: name="산학프로젝트", type="Course", properties=[(key="credits", value="3학점"), (key="deadline", value="6월 15일")]
+- Entity 3: name="SW교육원", type="Organization"
+- Entity 4: name="우수팀 장학금", type="Funding", properties=[(key="amount", value="50만원")]
+- Relation 1: from="소프트웨어융합전공", to="산학프로젝트", type="REQUIRES"
+- Relation 2: from="SW교육원", to="우수팀 장학금", type="PROVIDES"
+- Relation 3: from="우수팀 장학금", to="산학프로젝트", type="REWARDS"
 
 반드시 아래 JSON 형식으로만 응답하세요. 설명 없이 JSON만 출력하세요.
 
@@ -143,9 +158,9 @@ def extract_entities_and_relations(file_name: str, text: str) -> dict:
 }}"""
 
     try:
-        response = openai_client.chat.completions.create(
+        response = upstage_client.chat.completions.create(
             model=EXTRACT_MODEL,
-            max_tokens=2048,
+            max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
 
@@ -195,10 +210,11 @@ def extract_entities_and_relations(file_name: str, text: str) -> dict:
         }
 
     except Exception as e:
-        print(f"  [OpenAI 오류] {e}")
+        print(f"  [Upstage 오류] {e}")
         return {"entities": [], "relations": []}
 
 
+# ── Step 2: 유사 노드 통합 (solar-pro) ──────────────────────
 def consolidate_nodes(all_node_names: list[str]) -> dict[str, str]:
     all_node_names = [
         normalize_node_name(str(n))
@@ -235,7 +251,7 @@ def consolidate_nodes(all_node_names: list[str]) -> dict[str, str]:
 }}"""
 
     try:
-        response = openai_client.chat.completions.create(
+        response = upstage_client.chat.completions.create(
             model=EXTRACT_MODEL,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
@@ -273,6 +289,7 @@ def consolidate_nodes(all_node_names: list[str]) -> dict[str, str]:
         return {n: n for n in all_node_names}
 
 
+# ── Neo4j 저장 ───────────────────────────────────────────
 def create_document_node(session, file_name: str):
     session.run(
         """
@@ -284,16 +301,29 @@ def create_document_node(session, file_name: str):
     )
 
 
-def upsert_entity(session, name: str, etype: str, props: dict) -> str | None:
+def upsert_entity(session, name: str, etype: str, props, file_name: str = "") -> str | None:
     name = normalize_node_name(str(name))
 
     if not name or name == "Unknown" or should_skip_entity_name(name):
         return None
 
     label = sanitize_label(etype or "Entity")
-
     safe_props = {}
-    for k, v in (props or {}).items():
+
+    if isinstance(props, dict):
+        raw_items = props.items()
+    elif isinstance(props, list):
+        raw_items = []
+        for item in props:
+            if isinstance(item, dict):
+                if "key" in item and "value" in item:
+                    raw_items.append((item["key"], item["value"]))
+                else:
+                    raw_items.extend(item.items())
+    else:
+        raw_items = []
+
+    for k, v in raw_items:
         if not k:
             continue
 
@@ -303,11 +333,16 @@ def upsert_entity(session, name: str, etype: str, props: dict) -> str | None:
 
     session.run(
         f"""
-        MERGE (e:Entity {{name: $name}})
+        MERGE (e:`{label}` {{name: $name}})
         SET e += $props
-        SET e:`{label}`
+        SET e.source_files =
+            CASE
+                WHEN $file_name IN coalesce(e.source_files, [])
+                THEN e.source_files
+                ELSE coalesce(e.source_files, []) + $file_name
+            END
         """,
-        {"name": name, "props": safe_props},
+        {"name": name, "props": safe_props, "file_name": file_name},
     )
 
     return name
@@ -331,8 +366,8 @@ def create_relation(session, from_name: str, to_name: str, rel_type: str):
 
     session.run(
         f"""
-        MATCH (a:Entity {{name: $from_name}})
-        MATCH (b:Entity {{name: $to_name}})
+        MATCH (a {{name: $from_name}})
+        MATCH (b {{name: $to_name}})
         MERGE (a)-[:`{rel}`]->(b)
         """,
         {"from_name": from_name, "to_name": to_name},
@@ -340,6 +375,11 @@ def create_relation(session, from_name: str, to_name: str, rel_type: str):
 
 
 def build_graph():
+    """전체 그래프 구축
+    1단계: solar-pro로 각 문서에서 개체·관계 동적 추출
+    2단계: solar-pro로 전체 노드에서 유사 노드 통합 (1차 배치 + 2차 교차통합)
+    3단계: Neo4j 저장 (Document 노드 + MENTIONS 관계 포함)
+    """
     manual_path = os.path.join(PARSED_DIR, "manual_parsed.json")
 
     if not os.path.exists(manual_path):
@@ -354,11 +394,12 @@ def build_graph():
     try:
         clear_db(driver)
 
-        print(f"[시작] Graph DB 구축 ({len(manual_files)}개 파일) — GPT-4o-mini 동적 추출 모드")
+        print(f"[시작] Graph DB 구축 ({len(manual_files)}개 파일) — solar-pro 동적 추출 모드")
 
         all_entity_names = []
         extraction_results = []
 
+        # ── 1단계: 각 문서에서 개체·관계 추출 ──
         for i, mf in enumerate(manual_files):
             file_name = mf.get("file_name", f"unknown_{i}")
             parsed_text = str(mf.get("parsed_text", "")).strip()
@@ -380,13 +421,12 @@ def build_graph():
 
             for ent in extracted.get("entities", []):
                 name = normalize_node_name(str(ent.get("name", "")))
-
                 if name and name != "Unknown" and not should_skip_entity_name(name):
                     all_entity_names.append(name)
 
+        # ── 2단계: 유사 노드 통합 (1차 배치 + 2차 교차통합) ──
         unique_names = list(dict.fromkeys(all_entity_names))
-
-        print(f"\n[노드 통합] 고유 개체명 {len(unique_names)}개 → GPT-4o-mini 유사도 분석 중...")
+        print(f"\n[노드 통합] 고유 개체명 {len(unique_names)}개 → solar-pro 유사도 분석 중...")
 
         BATCH = 80
         name_mapping: dict[str, str] = {}
@@ -397,15 +437,19 @@ def build_graph():
             name_mapping.update(batch_map)
             print(f"  배치 {start // BATCH + 1}: {len(batch_names)}개 처리 완료")
 
-        representatives = list(dict.fromkeys(name_mapping.values()))
+        # 2차 교차 통합
+        canonical_names = list(dict.fromkeys(name_mapping.values()))
+        print(f"\n[교차 통합] 1차 대표 이름 {len(canonical_names)}개 → 최종 통합 중...")
 
-        if len(representatives) > 1:
-            print("  배치 대표 이름 추가 통합 중...")
-            second_pass_map = consolidate_nodes(representatives)
+        if len(canonical_names) > 1:
+            final_map = consolidate_nodes(canonical_names)
+            name_mapping = {
+                orig: final_map.get(canonical, canonical)
+                for orig, canonical in name_mapping.items()
+            }
+            print(f"  최종 대표 이름 {len(set(name_mapping.values()))}개로 통합 완료")
 
-            for src, dst in list(name_mapping.items()):
-                name_mapping[src] = second_pass_map.get(dst, dst)
-
+        # ── 3단계: Neo4j 저장 ──
         print("\n[저장] Neo4j에 노드·관계 저장 중...")
 
         with driver.session() as session:
@@ -417,20 +461,12 @@ def build_graph():
                 for ent in extracted.get("entities", []):
                     raw_name = normalize_node_name(str(ent.get("name", "")))
 
-                    if (
-                        not raw_name
-                        or raw_name == "Unknown"
-                        or should_skip_entity_name(raw_name)
-                    ):
+                    if not raw_name or raw_name == "Unknown" or should_skip_entity_name(raw_name):
                         continue
 
                     canonical = normalize_node_name(name_mapping.get(raw_name, raw_name))
 
-                    if (
-                        not canonical
-                        or canonical == "Unknown"
-                        or should_skip_entity_name(canonical)
-                    ):
+                    if not canonical or canonical == "Unknown" or should_skip_entity_name(canonical):
                         continue
 
                     created = upsert_entity(
@@ -438,6 +474,7 @@ def build_graph():
                         canonical,
                         ent.get("type", "Entity"),
                         ent.get("properties", {}),
+                        file_name,
                     )
 
                     if created:
@@ -446,7 +483,7 @@ def build_graph():
                         session.run(
                             """
                             MATCH (d:Document {file_name: $file_name})
-                            MATCH (e:Entity {name: $name})
+                            MATCH (e {name: $name})
                             MERGE (d)-[:MENTIONS]->(e)
                             """,
                             {"file_name": file_name, "name": canonical},
@@ -458,10 +495,8 @@ def build_graph():
                     rel_type = rel.get("type", "RELATED_TO")
 
                     if (
-                        not from_raw
-                        or not to_raw
-                        or from_raw == "Unknown"
-                        or to_raw == "Unknown"
+                        not from_raw or not to_raw
+                        or from_raw == "Unknown" or to_raw == "Unknown"
                         or should_skip_entity_name(from_raw)
                         or should_skip_entity_name(to_raw)
                     ):
@@ -502,9 +537,11 @@ def search_graph(keyword: str):
                 WHERE coalesce(n.name, '') CONTAINS $keyword
                    OR coalesce(n.title, '') CONTAINS $keyword
                    OR coalesce(n.file_name, '') CONTAINS $keyword
+                   OR ANY(f IN coalesce(n.source_files, []) WHERE f CONTAINS $keyword)
                    OR coalesce(m.name, '') CONTAINS $keyword
                    OR coalesce(m.title, '') CONTAINS $keyword
                    OR coalesce(m.file_name, '') CONTAINS $keyword
+                   OR ANY(f IN coalesce(m.source_files, []) WHERE f CONTAINS $keyword)
                 RETURN
                     coalesce(n.name, n.title, n.file_name, '') AS from_node,
                     type(r) AS rel,
@@ -535,8 +572,8 @@ def check_duplicate_nodes():
         with driver.session() as session:
             rows = session.run(
                 """
-                MATCH (n:Entity)
-                WHERE n.name IS NOT NULL
+                MATCH (n)
+                WHERE n.name IS NOT NULL AND NOT n:Document
                 WITH n.name AS name, count(n) AS cnt
                 WHERE cnt > 1
                 RETURN name, cnt

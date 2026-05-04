@@ -117,6 +117,16 @@ def extract_keywords(query):
 
     return unique_tokens[:5]
 
+def _format_props(props: dict, exclude_keys=("name", "title", "file_name", "source_files")) -> str:
+    """노드/관계 properties에서 이름·파일 관련 키를 제외하고 'key=value' 문자열로 변환"""
+    if not props:
+        return ""
+    parts = [
+        f"{k}={v}"
+        for k, v in props.items()
+        if k not in exclude_keys and v
+    ]
+    return ", ".join(parts)
 
 # ── Graph 검색 ───────────────────────────────────────────
 def graph_search(query, max_nodes_per_keyword=5, max_relations=20):
@@ -156,8 +166,11 @@ def graph_search(query, max_nodes_per_keyword=5, max_relations=20):
                     WHERE elementId(a) = $node_id
                     RETURN
                         coalesce(a.name, a.title, a.file_name, '') AS from_node,
+                        properties(a) AS from_props,
                         type(r) AS rel,
-                        coalesce(b.name, b.title, b.file_name, '') AS to_node
+                        properties(r) AS rel_props,
+                        coalesce(b.name, b.title, b.file_name, '') AS to_node,
+                        properties(b) AS to_props
                     LIMIT 10
                 """, {"node_id": node_id})
 
@@ -171,10 +184,17 @@ def graph_search(query, max_nodes_per_keyword=5, max_relations=20):
 
                     key = (from_node, rel, to_node)
                     if key not in seen:
+                        from_props_str = _format_props(row.get("from_props") or {})
+                        rel_props_str  = _format_props(row.get("rel_props") or {})
+                        to_props_str   = _format_props(row.get("to_props") or {})
+
                         results.append({
-                            "from": from_node,
-                            "relation": rel,
-                            "to": to_node
+                            "from":       from_node,
+                            "from_props": from_props_str,
+                            "relation":   rel,
+                            "rel_props":  rel_props_str,
+                            "to":         to_node,
+                            "to_props":   to_props_str,
                         })
                         seen.add(key)
 
@@ -184,8 +204,11 @@ def graph_search(query, max_nodes_per_keyword=5, max_relations=20):
                     WHERE elementId(b) = $node_id
                     RETURN
                         coalesce(a.name, a.title, a.file_name, '') AS from_node,
+                        properties(a) AS from_props,
                         type(r) AS rel,
-                        coalesce(b.name, b.title, b.file_name, '') AS to_node
+                        properties(r) AS rel_props,
+                        coalesce(b.name, b.title, b.file_name, '') AS to_node,
+                        properties(b) AS to_props
                     LIMIT 10
                 """, {"node_id": node_id})
 
@@ -199,10 +222,17 @@ def graph_search(query, max_nodes_per_keyword=5, max_relations=20):
 
                     key = (from_node, rel, to_node)
                     if key not in seen:
+                        from_props_str = _format_props(row.get("from_props") or {})
+                        rel_props_str  = _format_props(row.get("rel_props") or {})
+                        to_props_str   = _format_props(row.get("to_props") or {})
+
                         results.append({
-                            "from": from_node,
-                            "relation": rel,
-                            "to": to_node
+                            "from":       from_node,
+                            "from_props": from_props_str,
+                            "relation":   rel,
+                            "rel_props":  rel_props_str,
+                            "to":         to_node,
+                            "to_props":   to_props_str,
                         })
                         seen.add(key)
 
@@ -226,8 +256,14 @@ def merge_results(vector_docs, graph_relations):
         graph_text = "=== 관계 그래프 검색 결과 ===\n"
         for rel in graph_relations:
             if rel["from"] and rel["to"]:
-                graph_text += f"- {rel['from']} --[{rel['relation']}]--> {rel['to']}\n"
-        context_parts.append(graph_text.strip())
+                from_label = f"{rel['from']}({rel['from_props']})" if rel.get('from_props') else rel['from']
+                to_label   = f"{rel['to']}({rel['to_props']})"   if rel.get('to_props')   else rel['to']
+                rel_label  = rel['relation']
+                if rel.get('rel_props'):
+                    rel_label += f" {{{rel['rel_props']}}}"
+
+                graph_text += f"- {from_label} --[{rel_label}]--> {to_label}\n"
+                context_parts.append(graph_text.strip())
 
     return "\n\n".join(context_parts).strip()
 

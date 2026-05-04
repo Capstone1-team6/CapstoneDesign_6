@@ -350,9 +350,10 @@ def build_graph():
     print("\n[저장] Neo4j에 노드·관계 저장 중...")
 
     with driver.session() as session:
-        for file_name, extracted in extraction_results:
-            valid_names = set()
+        valid_names = set()
 
+        for file_name, extracted in extraction_results:
+            
             for entity in extracted.get("entities", []):
                 raw_name = str(entity.get("name", "")).strip()
                 if not raw_name:

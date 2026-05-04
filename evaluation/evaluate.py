@@ -426,6 +426,57 @@ def judge_answer(question, ground_truth, predicted, judge_llm):
         return "error", f"{type(e).__name__}: {e}"
 
 
+# ── LLM-as-judge: 답변 정답 여부 채점 ─────────────────────
+def get_judge_llm():
+    """채점용 LLM (기본 Upstage solar-pro).
+    환경변수 EVAL_JUDGE_MODEL 로 모델 변경 가능 (예: solar-mini).
+    """
+    from langchain_upstage import ChatUpstage
+    model = os.getenv("EVAL_JUDGE_MODEL", "solar-pro")
+    return ChatUpstage(model=model, temperature=0)
+
+
+def judge_answer(question, ground_truth, predicted, judge_llm):
+    """LLM 으로 답변이 ground_truth 와 의미상 일치하는지 판단.
+    반환: (verdict, reason). verdict ∈ {"correct", "incorrect", "skipped", "error"}.
+    """
+    if not predicted or not str(predicted).strip():
+        return "incorrect", "답변 없음"
+    if not ground_truth or not str(ground_truth).strip():
+        return "skipped", "정답(ground_truth) 미제공"
+
+    prompt = (
+        "아래 RAG 챗봇 답변이 정답과 의미상 일치하는지 판단하세요.\n"
+        "사소한 표현 차이는 일치로 보고, 핵심 사실(날짜/금액/조건/대상/링크 등)이 "
+        "다르거나 누락되면 불일치로 판단하세요.\n\n"
+        f"질문: {question}\n"
+        f"정답: {ground_truth}\n"
+        f"답변: {predicted}\n\n"
+        "다음 JSON 한 줄로만 답하세요:\n"
+        '{"verdict": "correct" 또는 "incorrect", "reason": "한 문장"}'
+    )
+    try:
+        raw = judge_llm.invoke(prompt).content.strip()
+        m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+        if m:
+            try:
+                obj = json.loads(m.group(0))
+                v = str(obj.get("verdict", "")).strip().lower()
+                rsn = str(obj.get("reason", "")).strip()
+                if v in ("correct", "incorrect"):
+                    return v, rsn
+            except json.JSONDecodeError:
+                pass
+        low = raw.lower()
+        if "incorrect" in low:
+            return "incorrect", raw[:200]
+        if "correct" in low:
+            return "correct", raw[:200]
+        return "error", f"파싱 실패: {raw[:200]}"
+    except Exception as e:
+        return "error", f"{type(e).__name__}: {e}"
+
+
 # ── 질문 1개 평가 ────────────────────────────────────────
 def evaluate_one(module, item, index, judge_llm=None):
     qid = extract_id(item, index)
@@ -505,7 +556,6 @@ def evaluate_one(module, item, index, judge_llm=None):
 
         hybrid_answer = hybrid_result.get("answer", "")
         row["hybrid_answer"] = hybrid_answer
-        row["hybrid_success"] = llm_judge(question, ground_truth, hybrid_answer)
         row["hybrid_sources"] = hybrid_summary["sources"]
         row["hybrid_scored_sources"] = hybrid_summary["scored_sources"]
         row["hybrid_graph_count"] = graph_summary["count"]

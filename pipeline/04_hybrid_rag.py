@@ -141,7 +141,9 @@ def graph_search(query, max_nodes_per_keyword=5, max_relations=20):
             node_result = session.run("""
                 MATCH (n)
                 WHERE coalesce(n.name, '') CONTAINS $keyword
+                    OR $keyword CONTAINS coalesce(n.name, '')
                     OR coalesce(n.title, '') CONTAINS $keyword
+                    OR $keyword CONTAINS coalesce(n.title, '')
                     OR ANY(f IN coalesce(n.source_files, []) WHERE f CONTAINS $keyword)
                 RETURN
                     elementId(n) AS node_id,

@@ -27,9 +27,9 @@ def _get_eval_metadata() -> dict:
     """평가 재현성을 위한 모델/하이퍼파라미터/git hash 메타데이터.
     값이 바뀌면 여기 직접 갱신 (런타임 동적 import 보다 단순/명시적이 낫다)."""
     return {
-        "Generation 모델":  "solar-pro-3",
+        "Generation 모델":  "solar-pro3",
         "Generation temp":  "0.2",
-        "Judge 모델":       f"{os.getenv('EVAL_JUDGE_MODEL', 'solar-pro-2')} (temp=0)",
+        "Judge 모델":       f"{os.getenv('EVAL_JUDGE_MODEL', 'solar-pro2')} (temp=0)",
         "Embedding 모델":   "embedding-passage",
         "chunk_size":       "500 (실측)",
         "max_relations":    "5",
@@ -320,13 +320,13 @@ def truncate_text(text, limit=1500):
 
 
 # ── LLM-as-judge: 답변 정답 여부 채점 ─────────────────────
-JUDGE_MODEL = "solar-pro-2"  # 재현성을 위해 generation 과 다른 dated 모델 고정
+JUDGE_MODEL = "solar-pro2"  # 재현성을 위해 generation 과 다른 dated 모델 고정
 JUDGE_TEMPERATURE = 0
 JUDGE_BASE_URL = "https://api.upstage.ai/v1"
 
 
 def get_judge_llm():
-    """채점용 클라이언트 (Upstage solar-pro-2, OpenAI SDK 호환 endpoint).
+    """채점용 클라이언트 (Upstage solar-pro2, OpenAI SDK 호환 endpoint).
     환경변수 EVAL_JUDGE_MODEL 로 모델 변경 가능."""
     from openai import OpenAI
     api_key = os.getenv("UPSTAGE_API_KEY")

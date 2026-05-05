@@ -1,10 +1,20 @@
 import os
 import re
+import sys
 import json
 import traceback
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from openai import OpenAI
+
+# Windows 콘솔(cp949) 에서도 한글 / em-dash 등 유니코드 출력 안전하게.
+# parser 와 동일한 처리 — 이게 없으면 print 한 줄에서 UnicodeEncodeError 로
+# 빌드 전체가 즉시 죽는다.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(BASE_DIR, ".env")

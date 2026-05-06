@@ -53,10 +53,9 @@ def vector_search(query, n_results=3):
     embedding_fn = get_embedding_function()
     client = get_chroma_client()
 
-    existing_collections = [
-    c.name if hasattr(c, 'name') else c
-    for c in client.list_collections()
-    ]
+    # Chroma v0.6 부터 list_collections() 가 collection name 문자열만 반환.
+    # 이전 코드의 c.name 접근은 NotImplementedError 를 raise.
+    existing_collections = list(client.list_collections())
     if COLLECTION_NAME not in existing_collections:
         raise ValueError(
             f"컬렉션이 없습니다: {COLLECTION_NAME} | 현재 컬렉션: {existing_collections}"
@@ -267,9 +266,9 @@ def merge_results(vector_docs, graph_relations):
 
 
 # ── LLM 답변 생성 ─────────────────────────────────────────
-GENERATION_MODEL = "solar-pro-3"  # 단일 source of truth — 호출부에서 이 상수 참조
+GENERATION_MODEL = "solar-pro3"  # 단일 source of truth — 호출부에서 이 상수 참조
 GENERATION_TEMPERATURE = 0.2     # 논문 기록용 (낮은 값으로 결정성/재현성 우선)
-GENERATION_MAX_TOKENS = None     # None=모델 기본값 (solar-pro-3 ~ 4k), 정수면 cap
+GENERATION_MAX_TOKENS = None     # None=모델 기본값 (solar-pro3 ~ 4k), 정수면 cap
 
 
 def generate_answer(query, context, model=GENERATION_MODEL):

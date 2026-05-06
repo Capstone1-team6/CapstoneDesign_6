@@ -1,0 +1,152 @@
+"""Vector DB 빌드 (Chroma) — manual + notices attachments 를 청킹해서 임베딩.
+
+이전엔 외부 스크립트로 만들어진 collection (chunk_size=500 추정) 을 그대로 썼다.
+이번엔 chunk_size=250 / overlap=50 으로 더 촘촘히 쪼개서 retrieval 정밀도를
+높인다 (평가 데이터셋이 매뉴얼 도메인 중심이라 specific fact 매칭이 핵심).
+
+실행: python pipeline/build_vector_db.py
+"""
+import os
+import sys
+import json
+
+from dotenv import load_dotenv
+import chromadb
+from chromadb.config import Settings
+from langchain_upstage import UpstageEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# Windows cp949 콘솔 대응
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ENV_PATH = os.path.join(BASE_DIR, ".env")
+PARSED_DIR = os.path.join(BASE_DIR, "data", "parsed")
+CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
+load_dotenv(ENV_PATH)
+
+# ── 청킹 / 임베딩 설정 (paper 기록용 단일 source of truth) ──
+CHUNK_SIZE = 250
+CHUNK_OVERLAP = 50
+EMBEDDING_MODEL = "embedding-passage"   # Upstage 현행 표기
+COLLECTION_NAME = "knu_cse_upstage_pro"  # 평가가 참조하는 컬렉션
+BATCH_SIZE = 64                          # 임베딩 API 호출 배치
+
+UPSTAGE_API_KEY = os.getenv("UPSTAGE_API_KEY")
+if not UPSTAGE_API_KEY:
+    raise RuntimeError("UPSTAGE_API_KEY 가 .env 에 없음")
+
+
+def load_documents() -> list[dict]:
+    """매뉴얼 + 공지 첨부파일을 단일 list 로 평탄화.
+    각 항목: {file_name, source_type, parsed_text}.
+    """
+    docs = []
+
+    manual_path = os.path.join(PARSED_DIR, "manual_parsed.json")
+    if os.path.exists(manual_path):
+        with open(manual_path, encoding="utf-8") as f:
+            for m in json.load(f):
+                text = (m.get("parsed_text") or "").strip()
+                if text:
+                    docs.append({
+                        "file_name": m.get("file_name", "unknown"),
+                        "source_type": "manual",
+                        "parsed_text": text,
+                    })
+
+    notices_path = os.path.join(PARSED_DIR, "notices_parsed.json")
+    if os.path.exists(notices_path):
+        with open(notices_path, encoding="utf-8") as f:
+            for n in json.load(f):
+                title = (n.get("title") or "").strip()
+                for a in n.get("attachments", []):
+                    text = (a.get("parsed_text") or "").strip()
+                    if not text:
+                        continue
+                    docs.append({
+                        "file_name": a.get("name", "unknown"),
+                        "source_type": "notice",
+                        "notice_title": title,
+                        "parsed_text": text,
+                    })
+
+    return docs
+
+
+def chunk_documents(docs: list[dict]) -> list[dict]:
+    """RecursiveCharacterTextSplitter 로 청크 분할. metadata 보존.
+    한국어 문서를 위해 separator 우선순위: 줄바꿈 → 마침표/쉼표 → 공백.
+    """
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        separators=["\n\n", "\n", ". ", "。", " ", ""],
+        length_function=len,
+    )
+
+    chunks = []
+    for doc in docs:
+        text = doc["parsed_text"]
+        for i, chunk_text in enumerate(splitter.split_text(text)):
+            chunks.append({
+                "id": f"{doc['file_name']}::chunk{i}",
+                "text": chunk_text,
+                "metadata": {
+                    "file_name": doc["file_name"],
+                    "source_type": doc["source_type"],
+                    "chunk_index": i,
+                    **({"notice_title": doc["notice_title"]}
+                       if "notice_title" in doc else {}),
+                },
+            })
+    return chunks
+
+
+def main():
+    print(f"[설정] chunk_size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP}")
+    print(f"[설정] embedding={EMBEDDING_MODEL}, collection={COLLECTION_NAME}")
+
+    docs = load_documents()
+    print(f"\n[로드] 문서 {len(docs)}개")
+
+    chunks = chunk_documents(docs)
+    print(f"[청킹] 청크 {len(chunks)}개")
+    if chunks:
+        lens = [len(c["text"]) for c in chunks]
+        print(f"  길이 평균 {sum(lens)//len(lens)}자, 최소 {min(lens)}, 최대 {max(lens)}")
+
+    embedding_fn = UpstageEmbeddings(model=EMBEDDING_MODEL, api_key=UPSTAGE_API_KEY)
+
+    client = chromadb.PersistentClient(
+        path=CHROMA_DIR, settings=Settings(anonymized_telemetry=False)
+    )
+    # 기존 컬렉션 삭제 후 재생성 (정확한 chunk_size 일관성 보장)
+    if COLLECTION_NAME in list(client.list_collections()):
+        print(f"[초기화] 기존 컬렉션 '{COLLECTION_NAME}' 삭제")
+        client.delete_collection(COLLECTION_NAME)
+    coll = client.create_collection(COLLECTION_NAME)
+
+    print(f"[임베딩] {len(chunks)}개 chunk 를 batch={BATCH_SIZE} 로 처리")
+    for start in range(0, len(chunks), BATCH_SIZE):
+        batch = chunks[start:start + BATCH_SIZE]
+        texts = [c["text"] for c in batch]
+        embeddings = embedding_fn.embed_documents(texts)
+        coll.add(
+            ids=[c["id"] for c in batch],
+            embeddings=embeddings,
+            documents=texts,
+            metadatas=[c["metadata"] for c in batch],
+        )
+        print(f"  batch {start // BATCH_SIZE + 1}: {start+1}-{start+len(batch)} / {len(chunks)}")
+
+    print(f"\n[완료] '{COLLECTION_NAME}' 컬렉션 {coll.count()}개 chunk")
+
+
+if __name__ == "__main__":
+    main()

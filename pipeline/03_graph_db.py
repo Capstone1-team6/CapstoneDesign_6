@@ -446,25 +446,57 @@ def create_relation(session, from_name: str, to_name: str, rel_type: str):
 
 def build_graph():
     """전체 그래프 구축
-    1단계: solar-pro로 각 문서에서 개체·관계 동적 추출
-    2단계: solar-pro로 전체 노드에서 유사 노드 통합 (1차 배치 + 2차 교차통합)
+    1단계: solar-pro 로 각 문서에서 개체·관계 동적 추출
+    2단계: solar-pro 로 전체 노드에서 유사 노드 통합 (1차 배치 + 2차 교차통합)
     3단계: Neo4j 저장 (Document 노드 + MENTIONS 관계 포함)
+
+    데이터 소스: manual_files + notices 의 attachments (둘 다 평가 대상이라
+    한쪽만 처리하면 hybrid 가 vector 를 보완 못 함).
     """
     manual_path = os.path.join(PARSED_DIR, "manual_parsed.json")
+    notices_path = os.path.join(PARSED_DIR, "notices_parsed.json")
 
-    if not os.path.exists(manual_path):
-        print(f"[오류] 파일이 없습니다: {manual_path}")
+    files_to_process = []
+
+    # 매뉴얼 파일들
+    if os.path.exists(manual_path):
+        with open(manual_path, encoding="utf-8") as f:
+            for mf in json.load(f):
+                files_to_process.append({
+                    "file_name": mf.get("file_name", "unknown"),
+                    "parsed_text": str(mf.get("parsed_text", "")).strip(),
+                })
+    else:
+        print(f"[경고] manual_parsed.json 없음 — 매뉴얼 스킵")
+
+    # 공지 첨부파일들 (각 attachment 를 개별 문서로 처리)
+    if os.path.exists(notices_path):
+        with open(notices_path, encoding="utf-8") as f:
+            for notice in json.load(f):
+                title = (notice.get("title") or "").strip()[:40]
+                for att in notice.get("attachments", []):
+                    text = str(att.get("parsed_text", "")).strip()
+                    if not text:
+                        continue
+                    files_to_process.append({
+                        "file_name": f"[공지] {title} | {att.get('name', '')}",
+                        "parsed_text": text,
+                    })
+    else:
+        print(f"[경고] notices_parsed.json 없음 — 공지 첨부 스킵")
+
+    manual_files = files_to_process  # 기존 변수명 유지 (이후 코드 수정 최소화)
+
+    if not manual_files:
+        print(f"[오류] 처리할 파일 없음")
         return
-
-    with open(manual_path, encoding="utf-8") as f:
-        manual_files = json.load(f)
 
     driver = get_driver()
 
     try:
         clear_db(driver)
 
-        print(f"[시작] Graph DB 구축 ({len(manual_files)}개 파일) — solar-pro 동적 추출 모드")
+        print(f"[시작] Graph DB 구축 ({len(manual_files)}개 파일) — solar-pro3 동적 추출 모드")
 
         all_entity_names = []
         extraction_results = []

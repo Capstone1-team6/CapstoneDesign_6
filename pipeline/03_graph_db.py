@@ -183,26 +183,54 @@ def extract_entities_and_relations(file_name: str, text: str) -> dict:
 
 ## 추출 규칙
 - 스키마를 고정하지 말고, 문서 내용에서 자연스럽게 나타나는 개념을 개체 타입으로 사용하세요.
-- 개체 타입은 문서에서 자연스럽게 드러나는 개념을 직접 반영한 짧고 명확한 영문 명사로 자유롭게 정하세요.
+- **개체 이름(name)은 반드시 한국어로 작성하세요. 영어 단어/캐멀케이스(GraduationRequirement, InternshipCredit 등) 절대 금지.** 문서에 한국어 표현이 있다면 그대로 사용하세요. KUCIS 같은 약어는 한글 풀네임("대학정보보호동아리") 우선, 약어 자체가 표준이면 약어 유지.
+- 개체 타입(type)은 영문 명사 (예: Major, Course, Organization, Funding, Requirement, Condition, Period).
 - 미리 정해진 타입 목록은 없습니다. 문서 내용에 가장 잘 맞는 타입을 스스로 선택하세요.
 - 비슷한 의미의 개체는 하나로 통합하세요 (예: "졸업요건"과 "졸업 요건"은 동일 개체).
-- 날짜, 금액, URL, 자격 요건, 학점 등 세부적인 정보는 새로운 노드로 쪼개지 마세요. 반드시 관련 핵심 개체의 'properties' 목록에 key-value 형태로 깔끔하게 저장하세요.
-- 관계 타입은 동사 형태의 영문 대문자로 작성하세요 (예: REQUIRES, HAS_DEADLINE, PART_OF, APPLIES_TO, RELATED_TO, HAS_CONDITION, BELONGS_TO, OFFERS, TARGETS).
+- 날짜, 금액, URL, 학점, 점수 등 단순 수치 정보는 'properties' 에 key-value 로 저장하세요. 단, **임계값으로 작용하는 수치(평점 1.7 미만, 토익 800점 이상)는 별도 노드(예: "평점 1.7 미만 학생")로 만들고 HAS_THRESHOLD 관계로 연결**하세요.
 - name이 비어 있는 개체는 만들지 마세요.
 - 홍길동처럼 예시용 이름이나 테스트용 placeholder 이름은 개체로 만들지 마세요.
 - 확실하지 않은 관계는 억지로 만들지 마세요.
 - relation의 from·to는 반드시 entities의 name 중 하나여야 합니다.
 
+## 관계 타입 (영문 대문자, 동사형). 다음 17개를 우선 사용:
+1. **REQUIRES** — A 가 B 를 요구함 (필수 조건)
+2. **HAS_CONDITION** — A 의 일반 조건이 B
+3. **HAS_THRESHOLD** — A 가 B(수치 임계) 를 기준으로 함. 예: 학사경고 HAS_THRESHOLD 평점 1.7 미만
+4. **HAS_DEADLINE** — A 의 마감 기한이 B
+5. **TARGETS** — A 의 대상이 B
+6. **OFFERS** / **PROVIDES** — A 가 B 를 제공
+7. **INCLUDES** — A 가 B 를 포함 (전체-부분)
+8. **PART_OF** / **BELONGS_TO** — B 가 A 의 구성 요소 / 소속
+9. **APPLIES_TO** — A 가 B 에 적용됨
+10. **EXCLUDES** — A 가 B 를 제외
+11. **EXCLUDES_FROM** — A 가 B(상위 집합)에서 제외됨. 예: 군휴학 EXCLUDES_FROM 학사경고대상
+12. **HAS_EXCEPTION** — A 의 예외 규정이 B. 예: 졸업요건 HAS_EXCEPTION 외국인유학생
+13. **SUBSTITUTES_FOR** — A 가 B 를 대체. 예: 논문게재 SUBSTITUTES_FOR 현장실습 / 자격증 SUBSTITUTES_FOR 어학시험
+14. **ALTERNATIVE_PATH** — A 와 B 가 동등한 경로 (택일 가능). 예: 캡스톤설계 ALTERNATIVE_PATH 종합설계
+15. **REWARDS** / **CHARGES** — 보상 / 비용 부과
+16. **ACCEPTS** / **REFERS** — 수용 / 참조
+17. **RELATED_TO** — 위에 안 맞을 때만 사용 (남용 금지)
+
+**lateral 관계(11~14)가 조건/대체 추론에 결정적이니 적극 추출하세요.** 단순 부모-자식만 추출하면 그래프가 빈약합니다.
+
 [Few-shot 예시]
-문서: "2026학년도 소프트웨어융합전공 산학프로젝트(3학점) 결과보고서 제출 안내. 기한은 6월 15일까지이며, 우수팀에게는 SW교육원에서 50만원의 장학금을 지급합니다."
+문서: "2026학년도 소프트웨어융합전공 산학프로젝트(3학점) 결과보고서 제출 안내. 기한은 6월 15일까지. 학사 경고는 평점평균 1.7 미만 학생에게 적용되며, 외국인유학생은 학사경고 적용에서 제외됩니다. 학·석사연계 트랙에서는 KCI 등재 학술지에 주저자 논문 게재 시 현장실습 3학점을 대체합니다."
 추출 논리:
 - Entity 1: name="소프트웨어융합전공", type="Major"
-- Entity 2: name="산학프로젝트", type="Course", properties=[(key="credits", value="3학점"), (key="deadline", value="6월 15일")]
-- Entity 3: name="SW교육원", type="Organization"
-- Entity 4: name="우수팀 장학금", type="Funding", properties=[(key="amount", value="50만원")]
+- Entity 2: name="산학프로젝트", type="Course", properties={{"credits":"3학점","deadline":"6월 15일"}}
+- Entity 3: name="학사경고", type="Status"
+- Entity 4: name="평점 1.7 미만 학생", type="Threshold"
+- Entity 5: name="외국인유학생", type="Cohort"
+- Entity 6: name="현장실습", type="Requirement", properties={{"credits":"3학점"}}
+- Entity 7: name="학·석사연계 트랙", type="Track"
+- Entity 8: name="KCI 주저자 논문게재", type="Achievement"
 - Relation 1: from="소프트웨어융합전공", to="산학프로젝트", type="REQUIRES"
-- Relation 2: from="SW교육원", to="우수팀 장학금", type="PROVIDES"
-- Relation 3: from="우수팀 장학금", to="산학프로젝트", type="REWARDS"
+- Relation 2: from="학사경고", to="평점 1.7 미만 학생", type="HAS_THRESHOLD"
+- Relation 3: from="학사경고", to="외국인유학생", type="HAS_EXCEPTION"
+- Relation 4: from="외국인유학생", to="학사경고", type="EXCLUDES_FROM"
+- Relation 5: from="KCI 주저자 논문게재", to="현장실습", type="SUBSTITUTES_FOR"
+- Relation 6: from="학·석사연계 트랙", to="현장실습", type="REQUIRES"
 
 반드시 아래 JSON 형식으로만 응답하세요. 설명 없이 JSON만 출력하세요.
 
@@ -304,10 +332,12 @@ def consolidate_nodes(all_node_names: list[str]) -> dict[str, str]:
 {names_text}
 
 ## 통합 규칙
-- 맞춤법 차이, 띄어쓰기 차이, 동의어는 하나로 통합하세요.
+- 맞춤법 차이, 띄어쓰기 차이, 동의어는 하나로 통합하세요 (예: "복학생", "복학 학생", "복학 대상자" → "복학").
+- **영어 캐멀케이스 노드(GraduationRequirement, InternshipCredit 등)는 한국어로 번역 후 통합**하세요. 예: GraduationRequirement → 졸업요건, InternshipCredit → 현장실습 학점, ResearchPaperPublication → 논문게재.
+- 같은 개념이 영어/한국어로 둘 다 있으면 **한국어 표현을 대표 이름으로** 사용하세요.
 - 의미가 다른 개체는 반드시 분리 유지하세요.
 - 괄호 안 표현이 의미 구분에 중요하면 제거하지 말고 유지하세요.
-- 대표 이름은 목록에 있는 이름 중 하나를 선택하거나, 더 명확한 표현이 있으면 새로 작성하세요.
+- 대표 이름은 목록에 있는 이름 중 하나를 선택하거나, 더 명확한 한국어 표현이 있으면 새로 작성하세요.
 - 통합하지 않아도 되는 노드도 결과에 반드시 포함하세요.
 - 홍길동 같은 테스트용 이름은 결과에서 제외하세요.
 

@@ -1,10 +1,16 @@
-"""Vector DB 빌드 (Chroma) — manual + notices attachments 를 청킹해서 임베딩.
+"""Vector DB 빌드 — BGE-m3-ko (dragonkue) 임베딩 사용.
 
-이전엔 이 파일이 graph DB 추출 코드로 repurpose 돼 있었으나 03_graph_db.py
-와 중복 + 옛 버전이라 제거. 본래 의도(00 crawler → 01 parser → 02 vector
-db → 03 graph db → 04 hybrid rag) 대로 vector DB 빌드 스크립트로 복원.
+기존 02_vector_db.py 는 Upstage embedding-passage 사용 (collection
+'knu_cse_upstage_pro'). 이 파일은 한국어 특화 BGE-m3-ko 로 별도 collection
+'knu_cse_bge_m3_ko' 빌드 — A/B 비교 + 롤백 가능.
 
-실행: python pipeline/02_vector_db.py
+근거 — AutoRAG Korean Embedding Benchmark Top-1: dragonkue/bge-m3-ko
+0.7456 (Upstage 0.6579 대비 +8.77pt). MIRACL-ko nDCG@10 0.683.
+출처: https://huggingface.co/dragonkue/bge-m3-ko
+
+실행:
+  python pipeline/02b_vector_db_bge.py        # 빌드
+  EMBED_BACKEND=bge python evaluation/evaluate.py   # 평가 시 BGE 사용
 """
 import os
 import sys
@@ -13,10 +19,9 @@ import json
 from dotenv import load_dotenv
 import chromadb
 from chromadb.config import Settings
-from langchain_upstage import UpstageEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from sentence_transformers import SentenceTransformer
 
-# Windows cp949 콘솔 대응
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -30,26 +35,15 @@ PARSED_DIR = os.path.join(BASE_DIR, "data", "parsed")
 CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 load_dotenv(ENV_PATH)
 
-# ── 청킹 / 임베딩 설정 (paper 기록용 단일 source of truth) ──
-# chunk_size 250 ablation 결과 hybrid 정답률 -9 (52→43) 로 음의 효과 →
-# 베스트 결과(20260505_201739) 와 동등한 chunk_size=500 으로 복원.
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
-EMBEDDING_MODEL = "embedding-passage"   # Upstage 현행 표기
-COLLECTION_NAME = "knu_cse_upstage_pro"  # 평가가 참조하는 컬렉션
-BATCH_SIZE = 64                          # 임베딩 API 호출 배치
-
-UPSTAGE_API_KEY = os.getenv("UPSTAGE_API_KEY")
-if not UPSTAGE_API_KEY:
-    raise RuntimeError("UPSTAGE_API_KEY 가 .env 에 없음")
+EMBEDDING_MODEL_NAME = "dragonkue/bge-m3-ko"
+COLLECTION_NAME = "knu_cse_bge_m3_ko"
+BATCH_SIZE = 32  # GPU 없을 때 CPU 인코딩 — batch 작게
 
 
 def load_documents() -> list[dict]:
-    """매뉴얼 + 공지 첨부파일을 단일 list 로 평탄화.
-    각 항목: {file_name, source_type, parsed_text}.
-    """
     docs = []
-
     manual_path = os.path.join(PARSED_DIR, "manual_parsed.json")
     if os.path.exists(manual_path):
         with open(manual_path, encoding="utf-8") as f:
@@ -61,7 +55,6 @@ def load_documents() -> list[dict]:
                         "source_type": "manual",
                         "parsed_text": text,
                     })
-
     notices_path = os.path.join(PARSED_DIR, "notices_parsed.json")
     if os.path.exists(notices_path):
         with open(notices_path, encoding="utf-8") as f:
@@ -77,22 +70,14 @@ def load_documents() -> list[dict]:
                         "notice_title": title,
                         "parsed_text": text,
                     })
-
     return docs
 
 
 def chunk_documents(docs: list[dict]) -> list[dict]:
-    """RecursiveCharacterTextSplitter 로 청크 분할. metadata 보존.
-    한국어 문서를 위해 separator 우선순위: 줄바꿈 → 마침표/쉼표 → 공백.
-    ID 는 doc_index 를 prefix 로 붙여 file_name 중복 시에도 unique 보장.
-    (서로 다른 공지에 같은 첨부 파일명이 있는 경우가 있음.)
-    """
+    """02_vector_db.py 와 동일한 한국 행정 문서 separator 사용."""
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
-        # 한국 행정 문서 separator 강화: 표/번호 단락 마커 우선해 문맥 끊김 최소화.
-        # 이전엔 "\n\n" 다음 바로 "\n" 이라 "가./나./1)/①" 같은 실제 문서
-        # 단락 경계가 무시돼 chunk 가 의미 단위 안 지키고 잘림.
         separators=[
             "\n\n",
             "\n## ", "\n# ",
@@ -106,7 +91,6 @@ def chunk_documents(docs: list[dict]) -> list[dict]:
         ],
         length_function=len,
     )
-
     chunks = []
     for doc_idx, doc in enumerate(docs):
         text = doc["parsed_text"]
@@ -128,7 +112,7 @@ def chunk_documents(docs: list[dict]) -> list[dict]:
 
 def main():
     print(f"[설정] chunk_size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP}")
-    print(f"[설정] embedding={EMBEDDING_MODEL}, collection={COLLECTION_NAME}")
+    print(f"[설정] embedding={EMBEDDING_MODEL_NAME}, collection={COLLECTION_NAME}")
 
     docs = load_documents()
     print(f"\n[로드] 문서 {len(docs)}개")
@@ -139,12 +123,13 @@ def main():
         lens = [len(c["text"]) for c in chunks]
         print(f"  길이 평균 {sum(lens)//len(lens)}자, 최소 {min(lens)}, 최대 {max(lens)}")
 
-    embedding_fn = UpstageEmbeddings(model=EMBEDDING_MODEL, api_key=UPSTAGE_API_KEY)
+    print(f"\n[모델 로드] {EMBEDDING_MODEL_NAME}")
+    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    print(f"  device: {model.device}, embedding dim: {model.get_sentence_embedding_dimension()}")
 
     client = chromadb.PersistentClient(
         path=CHROMA_DIR, settings=Settings(anonymized_telemetry=False)
     )
-    # 기존 컬렉션 삭제 후 재생성 (정확한 chunk_size 일관성 보장)
     if COLLECTION_NAME in list(client.list_collections()):
         print(f"[초기화] 기존 컬렉션 '{COLLECTION_NAME}' 삭제")
         client.delete_collection(COLLECTION_NAME)
@@ -154,7 +139,14 @@ def main():
     for start in range(0, len(chunks), BATCH_SIZE):
         batch = chunks[start:start + BATCH_SIZE]
         texts = [c["text"] for c in batch]
-        embeddings = embedding_fn.embed_documents(texts)
+        # sentence-transformers 는 numpy 반환 → tolist() 로 chroma 호환
+        embeddings = model.encode(
+            texts,
+            batch_size=BATCH_SIZE,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+            normalize_embeddings=True,  # cosine 유사도용 정규화
+        ).tolist()
         coll.add(
             ids=[c["id"] for c in batch],
             embeddings=embeddings,

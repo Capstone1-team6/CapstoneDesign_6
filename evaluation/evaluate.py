@@ -7,6 +7,36 @@ from datetime import datetime
 
 import pandas as pd
 import openpyxl
+<<<<<<< Updated upstream
+=======
+
+
+def _get_git_hash() -> str:
+    """현재 commit 의 짧은 hash (재현성 위해 xlsx 메타데이터에 기록)."""
+    try:
+        h = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL, timeout=2,
+        ).decode().strip()
+        return h or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _get_eval_metadata() -> dict:
+    """평가 재현성을 위한 모델/하이퍼파라미터/git hash 메타데이터.
+    값이 바뀌면 여기 직접 갱신 (런타임 동적 import 보다 단순/명시적이 낫다)."""
+    return {
+        "Generation 모델":  "solar-pro3",
+        "Generation temp":  "0.2",
+        "Judge 모델":       f"{os.getenv('EVAL_JUDGE_MODEL', 'gpt-4.1')} (temp=0)",
+        "Embedding 모델":   "embedding-passage",
+        "chunk_size":       "500 (실측)",
+        "max_relations":    "3",
+        "n_results":        "5",
+        "git hash":         _get_git_hash(),
+    }
+>>>>>>> Stashed changes
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
@@ -283,6 +313,77 @@ def truncate_text(text, limit=1500):
     return text[:limit] + "...[truncated]"
 
 
+<<<<<<< Updated upstream
+=======
+# ── LLM-as-judge: 답변 정답 여부 채점 ─────────────────────
+JUDGE_MODEL = "gpt-4.1"  # 최신 GPT 모델 — 환경변수 EVAL_JUDGE_MODEL 로 변경 가능
+JUDGE_TEMPERATURE = 0
+
+
+def get_judge_llm():
+    """채점용 클라이언트 (OpenAI GPT, 환경변수 EVAL_JUDGE_MODEL 로 모델 변경 가능)."""
+    from openai import OpenAI
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY 가 .env 에 없음 — judge 사용 불가")
+    return OpenAI(api_key=api_key)
+
+
+def judge_answer(question, ground_truth, predicted, judge_llm):
+    """LLM 으로 답변이 ground_truth 와 의미상 일치하는지 판단.
+    반환: (verdict, reason). verdict ∈ {"correct", "incorrect", "skipped", "error"}.
+    """
+    if not predicted or not str(predicted).strip():
+        return "incorrect", "답변 없음"
+    if not ground_truth or not str(ground_truth).strip():
+        return "skipped", "정답(ground_truth) 미제공"
+
+    prompt = (
+        "아래 RAG 챗봇 답변이 정답과 의미상 일치하는지 판단하세요.\n\n"
+        "## 판정 기준\n"
+        "correct  : 정답의 핵심 사실이 답변에 모두 포함되어 있고 정확함.\n"
+        "           정답보다 더 상세하거나 추가 정보가 있어도 핵심이 맞으면 correct.\n"
+        "incorrect: 정답의 핵심 사실 중 하나라도 (1) 틀린 값으로 기재되거나 (2) 완전히 누락됨.\n"
+        "           또는 질문 대상과 다른 항목의 값을 핵심 답변으로 제시한 경우.\n\n"
+        "## 주의\n"
+        "- 추가 정보(정답에 없지만 사실에 부합하는 내용)만으로는 incorrect 판정 금지.\n"
+        "- 수치·조건·대상이 정답과 다를 때만 incorrect.\n"
+        "- 사소한 표현·어순 차이는 correct.\n\n"
+        f"질문: {question}\n"
+        f"정답: {ground_truth}\n"
+        f"답변: {predicted}\n\n"
+        "다음 JSON 한 줄로만 답하세요:\n"
+        '{"verdict": "correct" 또는 "incorrect", "reason": "한 문장"}'
+    )
+    try:
+        model_name = os.getenv("EVAL_JUDGE_MODEL", JUDGE_MODEL)
+        response = judge_llm.chat.completions.create(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=JUDGE_TEMPERATURE,
+        )
+        raw = response.choices[0].message.content.strip()
+        m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+        if m:
+            try:
+                obj = json.loads(m.group(0))
+                v = str(obj.get("verdict", "")).strip().lower()
+                rsn = str(obj.get("reason", "")).strip()
+                if v in ("correct", "incorrect"):
+                    return v, rsn
+            except json.JSONDecodeError:
+                pass
+        low = raw.lower()
+        if "incorrect" in low:
+            return "incorrect", raw[:200]
+        if "correct" in low:
+            return "correct", raw[:200]
+        return "error", f"파싱 실패: {raw[:200]}"
+    except Exception as e:
+        return "error", f"{type(e).__name__}: {e}"
+
+
+>>>>>>> Stashed changes
 # ── 질문 1개 평가 ────────────────────────────────────────
 def evaluate_one(module, item, index):
     qid = extract_id(item, index)
@@ -371,6 +472,7 @@ def run_evaluation():
     rows = []
     start_time = time.time()
 
+<<<<<<< Updated upstream
     for idx, item in enumerate(dataset):
         question = extract_question(item)
         print(f"\n[{idx + 1}/{len(dataset)}] {question[:80]}")
@@ -406,8 +508,58 @@ def run_evaluation():
             f" | Graph relations: {row['hybrid_graph_count']}"
         )
         rows.append(row)
+=======
+    try:
+        for idx, item in enumerate(dataset):
+            question = extract_question(item)
+            print(f"\n[{idx + 1}/{len(dataset)}] {question[:80]}")
+            try:
+                row = evaluate_one(module, item, idx, judge_llm)
+            except Exception as e:
+                row = {
+                    "id": extract_id(item, idx),
+                    "category": extract_category(item),
+                    "question": question,
+                    "ground_truth": extract_ground_truth(item),
+
+                    "vector_success": False,
+                    "vector_judge_verdict": "error",
+                    "vector_judge_reason": "평가 핸들러 오류",
+                    "vector_answer": "",
+                    "vector_sources": "",
+                    "vector_scored_sources": "",
+                    "vector_context_preview": "",
+                    "vector_error": f"Unhandled: {type(e).__name__}: {e}",
+
+                    "hybrid_success": False,
+                    "hybrid_judge_verdict": "error",
+                    "hybrid_judge_reason": "평가 핸들러 오류",
+                    "hybrid_answer": "",
+                    "hybrid_sources": "",
+                    "hybrid_scored_sources": "",
+                    "hybrid_graph_count": 0,
+                    "hybrid_graph_preview": "",
+                    "hybrid_context_preview": "",
+                    "hybrid_error": f"Unhandled: {type(e).__name__}: {e}",
+                }
+
+            v_label = "정답" if row["vector_success"] else f"오답({row.get('vector_judge_verdict', '?')})"
+            h_label = "정답" if row["hybrid_success"] else f"오답({row.get('hybrid_judge_verdict', '?')})"
+            print(
+                f"  - Vector: {v_label}"
+                f" | Hybrid: {h_label}"
+                f" | Graph relations: {row['hybrid_graph_count']}"
+            )
+            rows.append(row)
+    except KeyboardInterrupt:
+        print(f"\n\n[중단] Ctrl+C 감지 — {len(rows)}/{len(dataset)}개 완료. 결과 저장 중...")
+>>>>>>> Stashed changes
 
     elapsed = round(time.time() - start_time, 2)
+
+    if not rows:
+        print("[종료] 저장할 결과 없음")
+        return {}
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     xlsx_path = os.path.join(RESULTS_DIR, f"evaluation_results_{timestamp}.xlsx")

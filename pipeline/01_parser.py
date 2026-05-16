@@ -52,6 +52,80 @@ def find_libreoffice():
 LIBREOFFICE = find_libreoffice()
 
 
+# ── 트랙별 졸업요건 표 어노테이션 ─────────────────────────────
+# opendataloader가 PDF 표를 선형화하면 다중전공트랙/해외복수학위트랙/학석사연계트랙의
+# 요건이 한 텍스트에 뒤섞인다. 각 ▸ 항목 앞에 [트랙명]을 삽입해
+# LLM이 어느 트랙의 요건인지 구분할 수 있도록 한다.
+
+_GRAD_TRACKS = [
+    "다중전공트랙",
+    "해외복수학위트랙",
+    "학석사연계트랙",
+    "학·석사연계트랙",
+    "학・석사연계트랙",
+]
+_TRACK_CANONICAL = {
+    "학·석사연계트랙":  "학석사연계트랙",
+    "학・석사연계트랙": "학석사연계트랙",
+}
+
+
+def _annotate_track_sections(text: str) -> str:
+    """PDF 표 선형화로 혼재된 트랙별 졸업요건에 '[트랙명]' 접두어 삽입.
+
+    알고리즘:
+      1. 트랙명 등장 줄 위치를 수집한다.
+      2. 줄 → 트랙 매핑: 트랙명 이후는 forward fill,
+         첫 트랙 등장 이전 줄은 첫 트랙으로 소급 적용한다.
+      3. '▸'가 포함된 줄에 트랙 레이블이 없으면 '[트랙명]'을 앞에 붙인다.
+
+    트랙명이 없는 문서는 원문 그대로 반환(no-op).
+    """
+    if not any(t in text for t in _GRAD_TRACKS):
+        return text
+
+    def canonical(name: str) -> str:
+        return _TRACK_CANONICAL.get(name, name)
+
+    lines = text.split('\n')
+
+    # 1단계: (줄 번호, 정규 트랙명) 수집
+    track_at: list[tuple[int, str]] = []
+    for i, line in enumerate(lines):
+        for t in _GRAD_TRACKS:
+            if t in line:
+                track_at.append((i, canonical(t)))
+                break
+
+    if not track_at:
+        return text
+
+    # 2단계: 줄 → 담당 트랙 매핑
+    #   첫 트랙 등장 이전 줄은 첫 트랙으로 소급 (표 앞부분 요건도 첫 트랙 소속)
+    first_line, first_track = track_at[0]
+    line_track: dict[int, str] = {}
+    for i in range(first_line):
+        line_track[i] = first_track
+    current, ptr = first_track, 0
+    for i in range(first_line, len(lines)):
+        if ptr < len(track_at) and i == track_at[ptr][0]:
+            current = track_at[ptr][1]
+            ptr += 1
+        line_track[i] = current
+
+    # 3단계: ▸ 항목에 레이블 삽입
+    result = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if '▸' in stripped:
+            track = line_track.get(i)
+            if track and track not in stripped:
+                line = f"[{track}] {stripped}"
+        result.append(line)
+
+    return '\n'.join(result)
+
+
 def parse_pdf_batch(file_paths):
     """opendataloader_pdf로 여러 PDF를 한 번에 Markdown으로 변환.
     JVM 부팅이 호출당 ~수백ms라 배치가 필수. 반환: dict[절대경로]→markdown 텍스트.
@@ -85,12 +159,14 @@ def parse_pdf_batch(file_paths):
             return results
 
         try:
-            opendataloader_pdf.convert(
-                input_path=copied_inputs, output_dir=out_dir, format="markdown"
+            # v1.0+: run(input_path=폴더, output_folder=..., generate_markdown=True)
+            # 이전 버전 convert(input_path=리스트, ...) API는 제거됨
+            opendataloader_pdf.run(
+                input_path=in_dir,
+                output_folder=out_dir,
+                generate_markdown=True,
             )
-        except (RuntimeError, OSError, ValueError) as e:
-            # 배치 변환은 보통 환경 문제(JVM/Java 누락 등)에서 실패한다.
-            # 빈 결과를 silent 하게 저장하면 호출자가 실패 인지 못 하므로 raise.
+        except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError) as e:
             raise RuntimeError(
                 f"opendataloader-pdf 변환 실패 ({len(copied_inputs)}개 PDF). "
                 f"Java 11+ 설치 여부 확인 필요. 원본: {e}"
@@ -105,7 +181,7 @@ def parse_pdf_batch(file_paths):
                 continue
             try:
                 with open(os.path.join(out_dir, fname), encoding="utf-8") as f:
-                    results[orig] = f.read().strip()
+                    results[orig] = _annotate_track_sections(f.read().strip())
             except OSError as e:
                 print(f"  [PDF md 읽기 오류] {orig}: {e}")
     return results
@@ -236,11 +312,15 @@ def parse_docx(file_path):
                 result.append(para.text.strip())
         for table in doc.tables:
             for row in table.rows:
-                row_text = " | ".join(
-                    cell.text.strip() for cell in row.cells if cell.text.strip()
-                )
-                if row_text:
-                    result.append("[표] " + row_text)
+                seen_cells: set[str] = set()
+                cells: list[str] = []
+                for cell in row.cells:
+                    txt = cell.text.strip()
+                    if txt and txt not in seen_cells:
+                        cells.append(txt)
+                        seen_cells.add(txt)
+                if cells:
+                    result.append("[표] " + " | ".join(cells))
     except Exception as e:
         print(f"  [DOCX 오류] {file_path}: {e}")
     return "\n".join(result)
@@ -419,8 +499,9 @@ def parse_all():
             print(f"  완료: {len(text)}자 추출")
             parsed_count += 1
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(notices, f, ensure_ascii=False, indent=2)
+        # 공지 단위로 저장 (크래시 시 이전 공지 결과 보존)
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(notices, f, ensure_ascii=False, indent=2)
 
     total_files = sum(len(n.get("attachments", [])) for n in notices)
     success = sum(

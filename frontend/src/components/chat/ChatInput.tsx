@@ -25,7 +25,6 @@ export function ChatInput() {
     defaultValues: { message: '' },
   })
 
-  // eslint-disable-next-line react-hooks/incompatible-library
   const messageValue = watch('message')
   const isEmpty = !messageValue.trim()
 

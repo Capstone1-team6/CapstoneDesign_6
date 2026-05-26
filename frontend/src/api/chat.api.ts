@@ -13,16 +13,17 @@ export async function sendChatMessage(
   onChunk: (chunk: StreamChunk) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const timeoutId = setTimeout(() => {
-    // 30초 타임아웃 처리 — AbortController가 외부에서 이미 abort 될 수도 있음
-  }, STREAM_TIMEOUT_MS)
+  const timeoutCtrl = new AbortController()
+  const timeoutId = setTimeout(() => timeoutCtrl.abort(), STREAM_TIMEOUT_MS)
+  // 사용자 중단(signal) 또는 타임아웃 중 하나라도 발생하면 fetch 취소
+  const combinedSignal = AbortSignal.any([signal, timeoutCtrl.signal])
 
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
-      signal,
+      signal: combinedSignal,
     })
 
     if (!response.ok) {

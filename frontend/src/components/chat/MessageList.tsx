@@ -18,14 +18,18 @@ export function MessageList() {
       messages[messages.length - 1]?.role !== 'assistant' ||
       messages[messages.length - 1]?.content === '')
 
-  if (messages.length === 0) {
-    return <WelcomeScreen />
-  }
-
   const handleRetry = () => {
     if (lastUserMessage) {
       sendMessage(lastUserMessage)
     }
+  }
+
+  if (messages.length === 0) {
+    return (
+      <div className="flex-1 overflow-y-auto scrollbar-thin">
+        <WelcomeScreen />
+      </div>
+    )
   }
 
   return (

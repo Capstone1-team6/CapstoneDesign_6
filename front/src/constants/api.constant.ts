@@ -1,8 +1,10 @@
 // constants/api.constant.ts
 // API 베이스 URL · 엔드포인트 경로 · 타임아웃 상수
 
+// 개발: 빈 문자열 → Vite proxy(/api → localhost:8000)로 상대 경로 사용
+// 홈서버 배포: nginx 리버스 프록시 없이 직접 연결할 경우 .env.local에 설정
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
+  import.meta.env.VITE_API_BASE_URL ?? '';
 
 export const CHAT_STREAM_TIMEOUT_MS = Number(
   import.meta.env.VITE_CHAT_STREAM_TIMEOUT_MS ?? 30_000,
@@ -19,7 +21,6 @@ export const ENDPOINTS = {
   meta:        '/api/meta',
 } as const;
 
-/** 클라이언트가 환경에 따라 mock SSE를 쓸지 결정하는 플래그 */
+/** VITE_USE_MOCK=true 로 명시해야만 mock 모드 활성화 */
 export const USE_MOCK_API =
-  !import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_USE_MOCK === 'true';

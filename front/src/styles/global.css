@@ -1,0 +1,51 @@
+/* 청담 — Global styles
+   Tailwind + 브랜드 키프레임 보강.
+   대부분의 스타일은 Tailwind 유틸리티로, 키프레임만 여기에 두어 `tailwind.config`와 함께 사용. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    margin: 0;
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
+                 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    letter-spacing: -0.011em;
+    background: #F5F9FE;
+    color: #0B1B3D;
+  }
+  button { font-family: inherit; }
+
+  /* Pretty markdown body styles (react-markdown) */
+  .prose h1, .prose h2, .prose h3 { font-weight: 600; letter-spacing: -0.02em; }
+  .prose ul { padding-left: 1.1rem; margin: 0.4rem 0; }
+  .prose li { margin: 0.2rem 0; line-height: 1.65; }
+  .prose strong { font-weight: 600; }
+  .prose p { margin: 0.4rem 0; line-height: 1.65; }
+  .prose code {
+    background: #EEF2F8; padding: 0.05rem 0.3rem; border-radius: 4px;
+    font-size: 0.9em; color: #2A3A5C;
+  }
+  .prose table {
+    width: 100%; border-collapse: collapse; margin: 0.6rem 0; font-size: 0.95em;
+  }
+  .prose th, .prose td { border-bottom: 1px solid #E3EAF4; padding: 0.4rem 0.6rem; text-align: left; }
+  .prose th { background: #F8FBFE; font-weight: 600; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #E3EAF4; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #B4D5F6; }
+}
+
+/* 키프레임 — tailwind.config 에서 animate-* 로 참조 */
+@keyframes cd-ripple   { 0% { transform: scale(0.45); opacity: 0.85; } 100% { transform: scale(1.35); opacity: 0; } }
+@keyframes cd-msg-in   { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cd-fade-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cd-scale-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes cd-blink    { 0%, 50% { opacity: 1 } 51%, 100% { opacity: 0 } }
+@keyframes cd-pulse    { 0%, 100% { opacity: 0.4; transform: scale(0.9); } 50% { opacity: 0.8; transform: scale(1.05); } }
+@keyframes cd-spin     { to { transform: rotate(360deg); } }

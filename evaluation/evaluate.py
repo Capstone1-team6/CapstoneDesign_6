@@ -188,11 +188,12 @@ def _save_clean_xlsx(xlsx_path, rows, collection_name, experiment_id, elapsed, t
         ]
 
         for col_idx, val in enumerate(data, start=1):
-            cell = ws2.cell(row=idx, column=col_idx, value=val)
+            safe_val = _xlsx_safe(val)
+            cell = ws2.cell(row=idx, column=col_idx, value=safe_val)
             cell.font = N_FONT
 
             if col_idx in SUCCESS_COLS:
-                cell.fill      = SUCCESS_FILL if val == "정답" else FAIL_FILL
+                cell.fill      = SUCCESS_FILL if safe_val == "정답" else FAIL_FILL
                 cell.alignment = AL_TC
             elif col_idx == 4:  # 질문 열 배경
                 cell.fill      = Q_FILL
@@ -213,13 +214,28 @@ def _save_clean_xlsx(xlsx_path, rows, collection_name, experiment_id, elapsed, t
     wb.save(xlsx_path)
 
 
+# 문자열이 이 문자로 시작하면 Excel 이 수식(formula)으로 해석해 #NAME? 등 오류 발생.
+# 시각적으로 거의 동일한 전각/대체 문자로 leading char 만 치환.
+_FORMULA_PREFIX_MAP = {
+    "=": "＝",  # 전각 등호
+    "+": "＋",  # 전각 플러스
+    "-": "－",  # 전각 하이픈-마이너스
+    "@": "＠",  # 전각 골뱅이
+}
+
+
 def _xlsx_safe(val):
-    """openpyxl 이 거부하는 control character 제거.
-    raw context/answer 에 LLM 이 넣은 illegal char (예: \\x00) 를 sanitize."""
+    """openpyxl 이 거부하는 control character 제거 + Excel 수식 prefix 회피.
+    1) raw context/answer 에 LLM 이 넣은 illegal char (예: \\x00) sanitize
+    2) 문자열이 =,+,-,@ 로 시작하면 leading char 를 전각 대체 문자로 치환
+       (LLM 이 '- 항목1' 식 불릿으로 답하면 Excel 이 수식 처리해 깨짐)"""
     if not isinstance(val, str):
         return val
     from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-    return ILLEGAL_CHARACTERS_RE.sub("", val)
+    val = ILLEGAL_CHARACTERS_RE.sub("", val)
+    if val and val[0] in _FORMULA_PREFIX_MAP:
+        val = _FORMULA_PREFIX_MAP[val[0]] + val[1:]
+    return val
 
 
 def _add_detail_sheet(wb, rows, H_FONT, B_FONT, N_FONT, AL_C, AL_TL, AL_TC,

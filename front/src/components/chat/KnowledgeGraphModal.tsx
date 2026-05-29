@@ -40,6 +40,7 @@ export function KnowledgeGraphModal({ graphKey, onClose }: Props) {
 
   return (
     <div
+      role="dialog" aria-modal="true" aria-labelledby="kg-modal-title"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       className="fixed inset-0 z-[100] flex animate-fade-in items-center justify-center
                  bg-ink/50 p-8 backdrop-blur-sm"
@@ -48,7 +49,7 @@ export function KnowledgeGraphModal({ graphKey, onClose }: Props) {
                       overflow-hidden rounded-cd-xl bg-surface shadow-cd-lg animate-scale-in">
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <div className="flex flex-col leading-tight">
-            <b className="text-[15.5px] font-semibold text-ink">{data.title}</b>
+            <b id="kg-modal-title" className="text-[15.5px] font-semibold text-ink">{data.title}</b>
             <span className="mt-0.5 text-[12px] text-ink-3">
               {data.sub} · 답변의 근거가 된 공지와 개념의 관계망
             </span>

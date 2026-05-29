@@ -6,9 +6,9 @@
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? '';
 
-export const CHAT_STREAM_TIMEOUT_MS = Number(
-  import.meta.env.VITE_CHAT_STREAM_TIMEOUT_MS ?? 30_000,
-);
+const _parsedTimeout = Number(import.meta.env.VITE_CHAT_STREAM_TIMEOUT_MS);
+export const CHAT_STREAM_TIMEOUT_MS =
+  Number.isFinite(_parsedTimeout) && _parsedTimeout > 0 ? _parsedTimeout : 30_000;
 
 export const ENDPOINTS = {
   /** POST — 메시지 전송 (SSE 스트리밍) */

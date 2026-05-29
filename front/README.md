@@ -33,7 +33,7 @@ npm run typecheck
 
 ## 폴더 구조 (PRD 준수)
 
-```
+```text
 src/
 ├── pages/                       UI 조립만 (API 직접 호출 ❌)
 │   ├── chat/ChatPage.tsx

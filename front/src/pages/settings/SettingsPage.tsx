@@ -54,6 +54,7 @@ export function SettingsPage({ onClose }: Props) {
             sub="즐겨찾기한 주제에 새 공지가 올라오면 알려드려요"
             right={
               <Toggle
+                title="중요 공지 알림"
                 on={pref.notifyImportant}
                 onClick={() => setPref((p) => ({ ...p, notifyImportant: !p.notifyImportant }))}
               />
@@ -64,6 +65,7 @@ export function SettingsPage({ onClose }: Props) {
             sub="오전 8시에 그날의 마감일·일정 한 줄 요약"
             right={
               <Toggle
+                title="매일 학사 일정 요약"
                 on={pref.notifyDaily}
                 onClick={() => setPref((p) => ({ ...p, notifyDaily: !p.notifyDaily }))}
               />
@@ -89,6 +91,7 @@ export function SettingsPage({ onClose }: Props) {
             sub='근거가 부족하면 "모른다"라고 답해요 (권장)'
             right={
               <Toggle
+                title="출처 없는 답변 차단"
                 on={pref.blockUnsourced}
                 onClick={() => setPref((p) => ({ ...p, blockUnsourced: !p.blockUnsourced }))}
               />
@@ -144,10 +147,10 @@ function SettingsRow({
   );
 }
 
-function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
+function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; title: string }) {
   return (
     <button
-      type="button" aria-pressed={on} onClick={onClick}
+      type="button" aria-pressed={on} aria-label={title} onClick={onClick}
       className={cn(
         'relative h-[22px] w-[38px] flex-shrink-0 rounded-full border-0 p-0 transition-colors',
         on ? 'bg-brand-500' : 'bg-line',

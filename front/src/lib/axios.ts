@@ -2,11 +2,11 @@
 // 공용 axios 인스턴스 — baseURL·timeout·인터셉터 설정.
 
 import axios from 'axios';
-import { API_BASE_URL, CHAT_STREAM_TIMEOUT_MS } from '@/constants/api.constant';
+import { API_BASE_URL } from '@/constants/api.constant';
 
 export const http = axios.create({
   baseURL: API_BASE_URL,
-  timeout: CHAT_STREAM_TIMEOUT_MS,
+  timeout: 10_000,
   headers: { 'Content-Type': 'application/json' },
 });
 

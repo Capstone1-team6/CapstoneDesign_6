@@ -4,6 +4,7 @@
 /** "2026.05.19. 02:00" 형식 — 동기화 표시용 */
 export function formatSyncTime(iso: string | Date): string {
   const d = typeof iso === 'string' ? new Date(iso) : iso;
+  if (isNaN(d.getTime())) return '—';
   const y = d.getFullYear();
   const m = pad(d.getMonth() + 1);
   const day = pad(d.getDate());
@@ -24,6 +25,7 @@ export function formatMessageTime(d: Date = new Date()): string {
 /** "오늘 / 어제 / 이전 7일 / 이전" 그룹 라벨 */
 export function relativeDayGroup(iso: string | Date): '오늘' | '어제' | '이전 7일' | '이전' {
   const d = typeof iso === 'string' ? new Date(iso) : iso;
+  if (isNaN(d.getTime())) return '이전';
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const target = new Date(d);

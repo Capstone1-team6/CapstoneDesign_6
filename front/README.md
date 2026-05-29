@@ -15,7 +15,7 @@ npm install
 
 # 2. 환경 변수 (선택)
 cp .env.example .env.local
-# VITE_API_BASE_URL 비워두면 mock SSE 자동 사용
+# 백엔드 없이 mock 사용 시: VITE_USE_MOCK=true 추가
 
 # 3. 개발 서버
 npm run dev
@@ -71,9 +71,9 @@ src/
 
 ## Mock SSE
 
-`VITE_API_BASE_URL` 가 비어있으면 `api/mock/mockChat.ts` 가 자동으로 호출돼서, 백엔드 없이도 RAG 파이프라인·스트리밍·출처·후속 질문·지식 그래프가 동작합니다.
+`.env.local` 에 `VITE_USE_MOCK=true` 를 설정하면 `api/mock/mockChat.ts` 가 호출돼서, 백엔드 없이도 RAG 파이프라인·스트리밍·출처·후속 질문·지식 그래프가 동작합니다.
 
-실서버 배포 시 `.env.local` 에 `VITE_API_BASE_URL=https://your-backend` 설정하면 진짜 SSE 스트림을 사용합니다.
+이 플래그를 설정하지 않으면 항상 실서버(`/api/chat`)로 요청합니다. 홈서버 직접 연결 시에는 `VITE_API_BASE_URL=http://<서버 IP>:8000` 을 함께 설정하세요.
 
 ## 구현 체크리스트 (PRD v3 매핑)
 

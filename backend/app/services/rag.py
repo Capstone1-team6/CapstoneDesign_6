@@ -85,6 +85,12 @@ def _doc_to_source(doc: dict, notices_index: dict[str, dict]) -> dict:
     }
 
 
+def clear_cache() -> None:
+    """Clear cached RAG module and notice metadata after index rebuilds."""
+    _load_hybrid_module.cache_clear()
+    _load_notices_index.cache_clear()
+
+
 def run_hybrid_rag(query: str) -> dict[str, Any]:
     """hybrid_rag 호출 후 프론트가 쓰는 형태로 정리해서 반환.
 

@@ -4,11 +4,31 @@
 import { http } from '@/lib/axios';
 import { ENDPOINTS } from '@/constants/api.constant';
 
+export type SyncStep =
+  | 'idle'
+  | 'crawl'
+  | 'download'
+  | 'parse'
+  | 'vector'
+  | 'graph'
+  | 'reload'
+  | 'done'
+  | 'error';
+
+export interface SyncStatus {
+  running: boolean;
+  step: SyncStep;
+  message: string;
+  lastError?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+}
+
 export async function triggerSync(maxPages = 3): Promise<void> {
   await http.post(ENDPOINTS.crawl, { maxPages });
 }
 
-export async function fetchSyncStatus(): Promise<{ running: boolean; lastError?: string | null }> {
-  const { data } = await http.get<{ running: boolean; lastError?: string | null }>(ENDPOINTS.crawlStatus);
+export async function fetchSyncStatus(): Promise<SyncStatus> {
+  const { data } = await http.get<SyncStatus>(ENDPOINTS.crawlStatus);
   return data;
 }

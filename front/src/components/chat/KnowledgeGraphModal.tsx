@@ -5,14 +5,17 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/common/Icon';
 import { IconButton } from '@/components/common/IconButton';
 import { GRAPH_DATA } from '@/constants/graph.constant';
+import type { KnowledgeGraph } from '@/types/graph.type';
 
 interface Props {
   graphKey: string;
+  /** 백엔드에서 받은 동적 그래프. 있으면 graphKey 보다 우선. */
+  graphData?: KnowledgeGraph;
   onClose: () => void;
 }
 
-export function KnowledgeGraphModal({ graphKey, onClose }: Props) {
-  const data = GRAPH_DATA[graphKey] ?? GRAPH_DATA.general;
+export function KnowledgeGraphModal({ graphKey, graphData, onClose }: Props) {
+  const data = graphData ?? GRAPH_DATA[graphKey] ?? GRAPH_DATA.general;
   const [hovered, setHovered] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });

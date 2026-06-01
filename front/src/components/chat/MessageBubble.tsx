@@ -20,7 +20,7 @@ interface Props {
   onCopy: (text: string) => void;
   onToggleBookmark: (msg: Message) => void;
   onOpenPreview: (src: AnnouncementSource) => void;
-  onExpandGraph: (key: string) => void;
+  onExpandGraph: (msg: Message) => void;
   onSendFollowup: (text: string) => void;
   onRetry: () => void;
   showMiniGraph: boolean;
@@ -120,8 +120,11 @@ export function MessageBubble({
               <SourcesSection sources={msg.sources} onPreview={onOpenPreview} />
             )}
 
-            {!msg.streaming && showMiniGraph && msg.graphKey && (
-              <MiniGraph graphKey={msg.graphKey} onExpand={() => onExpandGraph(msg.graphKey!)} />
+            {!msg.streaming && showMiniGraph && (msg.graphKey || msg.graphData) && (
+              <MiniGraph
+                graphKey={msg.graphKey ?? 'general'}
+                onExpand={() => onExpandGraph(msg)}
+              />
             )}
 
             {!msg.streaming && msg.followups && msg.followups.length > 0 && (

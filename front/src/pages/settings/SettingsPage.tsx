@@ -7,8 +7,9 @@ import { Icon } from '@/components/common/Icon';
 import { CDLogo } from '@/components/common/CDLogo';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
 import { formatSyncTime } from '@/utils/formatDate';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/utils/cn';
+import { triggerSync, fetchSyncStatus } from '@/api/sync.api';
 
 interface Props {
   onClose: () => void;
@@ -21,6 +22,43 @@ export function SettingsPage({ onClose }: Props) {
     notifyDaily: false,
     blockUnsourced: true,
   });
+
+  const [syncRunning, setSyncRunning] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  // 백엔드 진행 상태를 5초마다 폴링 (실행 중일 때만)
+  useEffect(() => {
+    if (!syncRunning) return;
+    const id = setInterval(async () => {
+      try {
+        const { running, lastError } = await fetchSyncStatus();
+        if (!running) {
+          setSyncRunning(false);
+          setSyncMsg(
+            lastError
+              ? `동기화 실패: ${lastError}`
+              : '동기화 완료. 새 데이터는 풀 파이프라인 재실행 후 검색에 반영됩니다.',
+          );
+        }
+      } catch {
+        // ignore
+      }
+    }, 5000);
+    return () => clearInterval(id);
+  }, [syncRunning]);
+
+  const handleSync = async () => {
+    if (syncRunning) return;
+    setSyncMsg(null);
+    try {
+      await triggerSync(3);
+      setSyncRunning(true);
+      setSyncMsg('크롤링 시작됨 — 백그라운드 실행 중...');
+    } catch (e) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setSyncMsg(err?.response?.data?.detail ?? '크롤링 트리거 실패');
+    }
+  };
 
   return (
     <div className="flex h-screen flex-col bg-canvas font-sans text-ink">
@@ -81,9 +119,20 @@ export function SettingsPage({ onClose }: Props) {
           />
           <SettingsRow
             title="마지막 동기화"
-            sub={`${meta ? formatSyncTime(meta.lastCrawledAt) : '—'} · 자동 (매일 새벽 2시)`}
+            sub={
+              syncMsg
+                ? syncMsg
+                : `${meta ? formatSyncTime(meta.lastCrawledAt) : '—'} · 자동 (매일 새벽 2시)`
+            }
             right={
-              <Button variant="pill" leadingIcon={<Icon.Refresh />}>지금 동기화</Button>
+              <Button
+                variant="pill"
+                leadingIcon={<Icon.Refresh />}
+                onClick={handleSync}
+                disabled={syncRunning}
+              >
+                {syncRunning ? '동기화 중...' : '지금 동기화'}
+              </Button>
             }
           />
           <SettingsRow

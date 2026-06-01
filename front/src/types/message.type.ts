@@ -2,6 +2,7 @@
 // 메시지 + 스트리밍 청크 도메인 모델
 
 import type { AnnouncementSource } from './announcement.type';
+import type { KnowledgeGraph } from './graph.type';
 
 export type MessageRole = 'user' | 'assistant';
 
@@ -12,8 +13,10 @@ export interface Message {
   sources?: AnnouncementSource[];
   /** 후속 질문 추천 */
   followups?: string[];
-  /** 답변과 연결된 지식 그래프 키 */
+  /** 답변과 연결된 지식 그래프 키 (legacy, mock 호환용) */
   graphKey?: string;
+  /** 백엔드에서 동적으로 받은 그래프 데이터 (graphKey 보다 우선) */
+  graphData?: KnowledgeGraph;
   createdAt: string;
   isError?: boolean;
   isBookmarked?: boolean;
@@ -40,6 +43,8 @@ export interface StreamChunk {
   sources?: AnnouncementSource[];
   followups?: string[];
   graphKey?: string;
+  /** 백엔드에서 동적으로 보내는 그래프 데이터 */
+  graphData?: KnowledgeGraph;
   sessionId?: string;
   /** pipeline 청크일 때 단계 식별자 */
   step?: 'crawl' | 'retrieve' | 'rerank' | 'generate';

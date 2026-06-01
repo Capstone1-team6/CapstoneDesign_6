@@ -117,7 +117,10 @@ export function useChat() {
             updateMessage(assistantId, { followups: chunk.followups });
             return;
           case 'graph':
-            updateMessage(assistantId, { graphKey: chunk.graphKey });
+            updateMessage(assistantId, {
+              graphKey: chunk.graphKey,
+              graphData: chunk.graphData,
+            });
             return;
           case 'session':
             if (chunk.sessionId) setSessionId(chunk.sessionId);

@@ -9,7 +9,7 @@ import type { AnnouncementSource } from '@/types/announcement.type';
 
 interface Props {
   onOpenPreview: (s: AnnouncementSource) => void;
-  onExpandGraph: (key: string) => void;
+  onExpandGraph: (msg: Message) => void;
   onSendFollowup: (text: string) => void;
   onRetry: () => void;
   showMiniGraph: boolean;

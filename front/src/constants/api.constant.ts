@@ -19,6 +19,10 @@ export const ENDPOINTS = {
   historyDetail: (sessionId: string) => `/api/history/${sessionId}`,
   /** GET — 서비스 메타 정보 (lastCrawledAt 등) */
   meta:        '/api/meta',
+  /** POST — 크롤러 트리거 (백그라운드 실행) */
+  crawl:       '/api/crawl',
+  /** GET — 크롤러 진행 상태 */
+  crawlStatus: '/api/crawl/status',
 } as const;
 
 /** VITE_USE_MOCK=true 로 명시해야만 mock 모드 활성화 */

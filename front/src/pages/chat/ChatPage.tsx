@@ -15,6 +15,7 @@ import { useChatStore } from '@/store/chatStore';
 import { useSidebarStore } from '@/store/sidebarStore';
 import type { AnnouncementSource } from '@/types/announcement.type';
 import type { Message } from '@/types/message.type';
+import type { KnowledgeGraph } from '@/types/graph.type';
 
 interface Props {
   onOpenSettings: () => void;
@@ -28,6 +29,7 @@ export function ChatPage({ onOpenSettings }: Props) {
 
   const [previewSource, setPreviewSource] = useState<AnnouncementSource | null>(null);
   const [graphKey, setGraphKey] = useState<string | null>(null);
+  const [graphData, setGraphData] = useState<KnowledgeGraph | null>(null);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -46,10 +48,19 @@ export function ChatPage({ onOpenSettings }: Props) {
   }, [addBookmark, removeBookmark, sessionId]);
 
   const handleOpenTopicGraph = useCallback(() => {
-    // 최신 답변 메시지의 graphKey, 없으면 general
-    const lastWithGraph = [...messages].reverse().find((m) => m.graphKey);
-    setGraphKey(lastWithGraph?.graphKey ?? 'general');
+    // 최신 답변 메시지의 graphData(백엔드 동적) 또는 graphKey(legacy/mock).
+    // 둘 다 없으면 'general' 더미 표시.
+    const lastWithGraph = [...messages].reverse().find(
+      (m) => m.graphData || m.graphKey,
+    );
+    setGraphData(lastWithGraph?.graphData ?? null);
+    setGraphKey(lastWithGraph?.graphData ? null : lastWithGraph?.graphKey ?? 'general');
   }, [messages]);
+
+  const closeGraphModal = () => {
+    setGraphKey(null);
+    setGraphData(null);
+  };
 
   const isWelcome = messages.length === 0;
 
@@ -69,7 +80,10 @@ export function ChatPage({ onOpenSettings }: Props) {
         ) : (
           <MessageList
             onOpenPreview={setPreviewSource}
-            onExpandGraph={(k) => setGraphKey(k)}
+            onExpandGraph={(m) => {
+              setGraphData(m.graphData ?? null);
+              setGraphKey(m.graphData ? null : m.graphKey ?? 'general');
+            }}
             onSendFollowup={(text) => { if (!isStreaming) void send(text); }}
             onRetry={retryLast}
             showMiniGraph
@@ -87,8 +101,12 @@ export function ChatPage({ onOpenSettings }: Props) {
         open={!!previewSource}
         onClose={() => setPreviewSource(null)}
       />
-      {graphKey && (
-        <KnowledgeGraphModal graphKey={graphKey} onClose={() => setGraphKey(null)} />
+      {(graphKey || graphData) && (
+        <KnowledgeGraphModal
+          graphKey={graphKey ?? 'general'}
+          graphData={graphData ?? undefined}
+          onClose={closeGraphModal}
+        />
       )}
     </div>
   );

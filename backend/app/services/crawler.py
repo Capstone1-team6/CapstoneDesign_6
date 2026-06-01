@@ -1,19 +1,46 @@
-"""크롤러 서비스 — pipeline/00_crawler.py 의 crawl() 을 동적 import 해서 호출.
+"""Full data sync service.
 
-주의: 크롤만 하면 notices.json 만 갱신되고 vector/graph DB 는 stale 상태.
-실제 검색에 반영하려면 01_parser → 02_vector_db → 03_graph_db 까지 풀 파이프라인
-재실행 필요. MVP 는 크롤만 노출하고 풀 파이프라인은 수동.
+The public API is still named "crawl" for frontend compatibility, but the
+operation now reflects new data into search: crawl, download attachments, parse,
+rebuild Chroma, update Neo4j, then clear in-process RAG caches.
 """
-import os
+from __future__ import annotations
+
 import importlib.util
+import os
+import subprocess
+import sys
+import threading
+from datetime import datetime
 from functools import lru_cache
+from typing import Literal
 
 from ..config import PROJECT_ROOT
 
 
 CRAWLER_PATH = os.path.join(PROJECT_ROOT, "pipeline", "00_crawler.py")
 
-_state = {"running": False, "last_error": None}
+SyncStep = Literal[
+    "idle",
+    "crawl",
+    "download",
+    "parse",
+    "vector",
+    "graph",
+    "reload",
+    "done",
+    "error",
+]
+
+_lock = threading.Lock()
+_state = {
+    "running": False,
+    "step": "idle",
+    "message": "대기 중",
+    "last_error": None,
+    "started_at": None,
+    "finished_at": None,
+}
 
 
 @lru_cache(maxsize=1)
@@ -24,25 +51,119 @@ def _load_crawler_module():
     return module
 
 
+def _now() -> str:
+    return datetime.utcnow().isoformat()
+
+
+def _set_state(
+    *,
+    running: bool | None = None,
+    step: SyncStep | None = None,
+    message: str | None = None,
+    last_error: str | None = None,
+    started_at: str | None = None,
+    finished_at: str | None = None,
+) -> None:
+    with _lock:
+        if running is not None:
+            _state["running"] = running
+        if step is not None:
+            _state["step"] = step
+        if message is not None:
+            _state["message"] = message
+        if last_error is not None or step != "error":
+            _state["last_error"] = last_error
+        if started_at is not None:
+            _state["started_at"] = started_at
+        if finished_at is not None:
+            _state["finished_at"] = finished_at
+
+
+def _run_pipeline_script(script_name: str, step: SyncStep, message: str) -> None:
+    _set_state(step=step, message=message)
+    subprocess.run(
+        [sys.executable, os.path.join("pipeline", script_name)],
+        cwd=PROJECT_ROOT,
+        check=True,
+    )
+
+
+def _clear_rag_caches() -> None:
+    _set_state(step="reload", message="검색 캐시를 새 인덱스로 갱신하는 중")
+    try:
+        from . import rag
+
+        rag.clear_cache()
+    except Exception as e:
+        # Cache clearing is best-effort; a later process restart also refreshes it.
+        print(f"[sync] RAG cache clear skipped: {type(e).__name__}: {e}")
+
+
 def is_running() -> bool:
-    return _state["running"]
+    with _lock:
+        return bool(_state["running"])
 
 
 def last_error() -> str | None:
-    return _state["last_error"]
+    with _lock:
+        return _state["last_error"]
+
+
+def status() -> dict:
+    with _lock:
+        return {
+            "running": _state["running"],
+            "step": _state["step"],
+            "message": _state["message"],
+            "lastError": _state["last_error"],
+            "startedAt": _state["started_at"],
+            "finishedAt": _state["finished_at"],
+        }
 
 
 def run_crawl(max_pages: int = 3) -> None:
-    """동기 크롤 실행. BackgroundTasks 에서 호출되어 백그라운드 스레드에서 돈다."""
-    if _state["running"]:
+    """Backward-compatible entrypoint for the full sync pipeline."""
+    run_full_sync(max_pages=max_pages)
+
+
+def run_full_sync(max_pages: int = 3) -> None:
+    if is_running():
         return
-    _state["running"] = True
-    _state["last_error"] = None
+
+    _set_state(
+        running=True,
+        step="crawl",
+        message="공지 목록을 크롤링하는 중",
+        last_error=None,
+        started_at=_now(),
+        finished_at=None,
+    )
+
     try:
         module = _load_crawler_module()
-        module.crawl(max_pages=max_pages)
+
+        notices = module.crawl(max_pages=max_pages)
+        _set_state(step="download", message="첨부파일을 다운로드하는 중")
+        module.download_attachments(notices)
+
+        _run_pipeline_script("01_parser.py", "parse", "문서와 첨부파일을 파싱하는 중")
+        _run_pipeline_script("02_vector_db.py", "vector", "Vector DB를 재빌드하는 중")
+        _run_pipeline_script("03_graph_db.py", "graph", "Graph DB를 갱신하는 중")
+        _clear_rag_caches()
+
+        _set_state(
+            running=False,
+            step="done",
+            message="동기화 완료. 새 데이터가 검색에 반영되었습니다.",
+            finished_at=_now(),
+        )
     except Exception as e:
-        _state["last_error"] = f"{type(e).__name__}: {e}"
+        err = f"{type(e).__name__}: {e}"
+        _set_state(
+            running=False,
+            step="error",
+            message="동기화 실패",
+            last_error=err,
+            finished_at=_now(),
+        )
         raise
-    finally:
-        _state["running"] = False

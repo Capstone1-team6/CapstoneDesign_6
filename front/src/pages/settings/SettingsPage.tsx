@@ -31,14 +31,10 @@ export function SettingsPage({ onClose }: Props) {
     if (!syncRunning) return;
     const id = setInterval(async () => {
       try {
-        const { running, lastError } = await fetchSyncStatus();
+        const { running, lastError, message } = await fetchSyncStatus();
+        setSyncMsg(lastError ? `동기화 실패: ${lastError}` : message);
         if (!running) {
           setSyncRunning(false);
-          setSyncMsg(
-            lastError
-              ? `동기화 실패: ${lastError}`
-              : '동기화 완료. 새 데이터는 풀 파이프라인 재실행 후 검색에 반영됩니다.',
-          );
         }
       } catch {
         // ignore
@@ -53,10 +49,10 @@ export function SettingsPage({ onClose }: Props) {
     try {
       await triggerSync(3);
       setSyncRunning(true);
-      setSyncMsg('크롤링 시작됨 — 백그라운드 실행 중...');
+      setSyncMsg('전체 동기화 시작됨 - 크롤링, 파싱, 검색 DB 반영을 진행합니다.');
     } catch (e) {
       const err = e as { response?: { data?: { detail?: string } } };
-      setSyncMsg(err?.response?.data?.detail ?? '크롤링 트리거 실패');
+      setSyncMsg(err?.response?.data?.detail ?? '동기화 시작 실패');
     }
   };
 
@@ -131,7 +127,7 @@ export function SettingsPage({ onClose }: Props) {
                 onClick={handleSync}
                 disabled={syncRunning}
               >
-                {syncRunning ? '동기화 중...' : '지금 동기화'}
+                {syncRunning ? '검색 DB 반영 중...' : '지금 동기화'}
               </Button>
             }
           />

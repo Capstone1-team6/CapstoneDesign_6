@@ -9,6 +9,7 @@ chunk_id 형식: {source_type}::{doc_key}::chunk{i}
 실행: python pipeline/02_vector_db.py
 """
 import os
+import re
 import sys
 import json
 
@@ -128,12 +129,57 @@ def load_documents() -> list[dict]:
     return docs
 
 
+# ── 섹션 분할 ────────────────────────────────────────────────
+_HEADING_RE = re.compile(r'(?m)^(#{1,3} .+)$')
+
+
+def _split_into_sections(text: str) -> list[tuple[str, str]]:
+    """# / ## / ### 헤딩 기준으로 텍스트를 섹션으로 분할.
+
+    반환: [(heading, body), ...]
+      - heading: 해당 섹션의 마크다운 헤딩 문자열 (없으면 "")
+      - body: 헤딩 이후 다음 헤딩 이전까지의 본문
+
+    동기: 'KNU+인재장학생' / '도전장학생' 같이 별개 개체를 설명하는 섹션이
+    한 문서에 연속으로 나올 때, 헤딩 경계를 지키지 않고 청킹하면
+    ੦ 본문(1년 이내 조건 등)이 헤딩 없는 청크로 분리돼 섹션 context 를 잃음.
+    섹션 단위로 먼저 자르면 각 청크가 반드시 자신의 섹션 내부에 머물게 됨.
+    """
+    sections: list[tuple[str, str]] = []
+    last_end = 0
+    last_heading = ""
+
+    for m in _HEADING_RE.finditer(text):
+        body = text[last_end:m.start()].strip()
+        if body:
+            sections.append((last_heading, body))
+        last_heading = m.group(1).strip()
+        last_end = m.end()
+
+    # 마지막 섹션 (문서 끝까지)
+    body = text[last_end:].strip()
+    if body:
+        sections.append((last_heading, body))
+
+    # 헤딩이 하나도 없으면 전체를 단일 섹션으로 반환
+    if not sections:
+        sections = [("", text.strip())]
+
+    return sections
+
+
 # ── 청킹 ─────────────────────────────────────────────────────
 def chunk_documents(docs: list[dict]) -> list[dict]:
-    """RecursiveCharacterTextSplitter 로 청크 분할.
-    - chunk_id: make_chunk_id(doc_key, i) — 순서 독립적, Neo4j 와 공유
-    - 공지 제목 prepend — 임베딩에 제목 의미 반영
-    - MIN_CHUNK_LEN 미만 청크 제거
+    """섹션 인식 청킹 — 각 # 헤딩 단위로 먼저 분리한 뒤 RecursiveCharacterTextSplitter 적용.
+
+    핵심 변경:
+      - 헤딩 경계를 넘지 않으므로 '1년 이내 조건' 같은 ੦ 본문이
+        자신이 속한 섹션(KNU+인재장학생 vs 도전장학생) 안에서만 청킹됨.
+      - 헤딩이 청크에 포함되지 않으면 자동으로 prepend →
+        임베딩이 섹션 context 를 보존.
+      - section_heading 메타데이터 추가 → BM25·graph 검색에서 필터링 활용 가능.
+
+    chunk_id: make_chunk_id(doc_key, global_idx) — 전역 순서 기반 (기존 규칙 유지).
     """
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
@@ -159,23 +205,34 @@ def chunk_documents(docs: list[dict]) -> list[dict]:
         text = f"[{title}]\n{doc['parsed_text']}" if title else doc["parsed_text"]
         doc_key = doc["doc_key"]
 
-        for i, chunk_text in enumerate(splitter.split_text(text)):
-            if len(chunk_text) < MIN_CHUNK_LEN:
-                skipped += 1
-                continue
-            chunks.append({
-                "id": make_chunk_id(doc_key, i),
-                "text": chunk_text,
-                "metadata": {
-                    "doc_key": doc_key,
-                    "file_name": doc["file_name"],
-                    "source_type": doc["source_type"],
-                    "chunk_index": i,
-                    **({"notice_title": title} if title else {}),
-                    **({"notice_num": doc["notice_num"]} if doc.get("notice_num") else {}),
-                    **({"date": doc["date"]} if doc.get("date") else {}),
-                },
-            })
+        global_idx = 0
+        for heading, body in _split_into_sections(text):
+            for chunk_text in splitter.split_text(body):
+                if len(chunk_text) < MIN_CHUNK_LEN:
+                    skipped += 1
+                    continue
+
+                # 헤딩이 청크 본문에 이미 포함돼 있지 않으면 prepend.
+                # 이렇게 하면 섹션 첫 청크(헤딩 포함)와 이후 청크(본문만)가
+                # 모두 동일한 섹션 context 를 임베딩에 담게 됨.
+                if heading and heading not in chunk_text:
+                    chunk_text = f"{heading}\n\n{chunk_text}"
+
+                chunks.append({
+                    "id": make_chunk_id(doc_key, global_idx),
+                    "text": chunk_text,
+                    "metadata": {
+                        "doc_key": doc_key,
+                        "file_name": doc["file_name"],
+                        "source_type": doc["source_type"],
+                        "chunk_index": global_idx,
+                        "section_heading": heading,
+                        **({"notice_title": title} if title else {}),
+                        **({"notice_num": doc["notice_num"]} if doc.get("notice_num") else {}),
+                        **({"date": doc["date"]} if doc.get("date") else {}),
+                    },
+                })
+                global_idx += 1
 
     if skipped:
         print(f"  (짧은 청크 {skipped}개 제거됨, 기준: {MIN_CHUNK_LEN}자 미만)")

@@ -12,6 +12,8 @@ DB_URL = f"sqlite:///{DB_PATH}"
 
 NOTICES_JSON_PATH = os.path.join(PROJECT_ROOT, "data", "raw", "notices.json")
 HYBRID_RAG_PATH = os.path.join(PROJECT_ROOT, "pipeline", "04_hybrid_rag.py")
+SYNC_ADMIN_TOKEN = os.getenv("SYNC_ADMIN_TOKEN", "").strip()
+MAX_SYNC_PAGES = int(os.getenv("MAX_SYNC_PAGES", "5"))
 
 CORS_ORIGINS = [
     o.strip() for o in os.getenv(

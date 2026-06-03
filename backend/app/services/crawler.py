@@ -79,10 +79,15 @@ def _set_state(
             _state["finished_at"] = finished_at
 
 
-def _run_pipeline_script(script_name: str, step: SyncStep, message: str) -> None:
+def _run_pipeline_script(
+    script_name: str,
+    step: SyncStep,
+    message: str,
+    *args: str,
+) -> None:
     _set_state(step=step, message=message)
     subprocess.run(
-        [sys.executable, os.path.join("pipeline", script_name)],
+        [sys.executable, os.path.join("pipeline", script_name), *args],
         cwd=PROJECT_ROOT,
         check=True,
     )
@@ -148,7 +153,7 @@ def run_full_sync(max_pages: int = 3) -> None:
 
         _run_pipeline_script("01_parser.py", "parse", "문서와 첨부파일을 파싱하는 중")
         _run_pipeline_script("02_vector_db.py", "vector", "Vector DB를 재빌드하는 중")
-        _run_pipeline_script("03_graph_db.py", "graph", "Graph DB를 갱신하는 중")
+        _run_pipeline_script("03_graph_db.py", "graph", "Graph DB를 재빌드하는 중", "--rebuild")
         _clear_rag_caches()
 
         _set_state(

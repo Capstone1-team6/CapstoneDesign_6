@@ -8,23 +8,19 @@ import { CDLogo } from '@/components/common/CDLogo';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
 import { formatSyncTime } from '@/utils/formatDate';
 import { useEffect, useState } from 'react';
-import { cn } from '@/utils/cn';
 import { triggerSync, fetchSyncStatus } from '@/api/sync.api';
 
 interface Props {
   onClose: () => void;
 }
 
+const SYNC_TOKEN_STORAGE_KEY = 'cheongdam.syncToken';
+
 export function SettingsPage({ onClose }: Props) {
   const { meta } = useAnnouncements();
-  const [pref, setPref] = useState({
-    notifyImportant: true,
-    notifyDaily: false,
-    blockUnsourced: true,
-  });
-
   const [syncRunning, setSyncRunning] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [syncToken, setSyncToken] = useState(() => localStorage.getItem(SYNC_TOKEN_STORAGE_KEY) ?? '');
 
   // 백엔드 진행 상태를 5초마다 폴링 (실행 중일 때만)
   useEffect(() => {
@@ -46,8 +42,14 @@ export function SettingsPage({ onClose }: Props) {
   const handleSync = async () => {
     if (syncRunning) return;
     setSyncMsg(null);
+    const token = syncToken.trim();
+    if (!token) {
+      setSyncMsg('관리자 토큰을 입력해야 동기화를 시작할 수 있습니다.');
+      return;
+    }
     try {
-      await triggerSync(3);
+      localStorage.setItem(SYNC_TOKEN_STORAGE_KEY, token);
+      await triggerSync(3, token);
       setSyncRunning(true);
       setSyncMsg('전체 동기화 시작됨 - 크롤링, 파싱, 검색 DB 반영을 진행합니다.');
     } catch (e) {
@@ -68,57 +70,17 @@ export function SettingsPage({ onClose }: Props) {
       </div>
 
       <div className="mx-auto w-full max-w-[720px] flex-1 overflow-y-auto px-8 pb-12 pt-8">
-        <SettingsGroup label="계정">
-          <SettingsRow
-            title="경북대 재학생"
-            sub="student@knu.ac.kr · 컴퓨터학부 4학년"
-            leading={
-              <div className="flex h-11 w-11 items-center justify-center rounded-full
-                              bg-gradient-to-br from-brand-100 to-brand-400 font-semibold text-white">
-                경
-              </div>
-            }
-            right={<Button variant="pill">로그아웃</Button>}
-          />
-        </SettingsGroup>
-
-        <SettingsGroup label="알림">
-          <SettingsRow
-            title="중요 공지 알림"
-            sub="즐겨찾기한 주제에 새 공지가 올라오면 알려드려요"
-            right={
-              <Toggle
-                title="중요 공지 알림"
-                on={pref.notifyImportant}
-                onClick={() => setPref((p) => ({ ...p, notifyImportant: !p.notifyImportant }))}
-              />
-            }
-          />
-          <SettingsRow
-            title="매일 학사 일정 요약"
-            sub="오전 8시에 그날의 마감일·일정 한 줄 요약"
-            right={
-              <Toggle
-                title="매일 학사 일정 요약"
-                on={pref.notifyDaily}
-                onClick={() => setPref((p) => ({ ...p, notifyDaily: !p.notifyDaily }))}
-              />
-            }
-          />
-        </SettingsGroup>
-
         <SettingsGroup label="데이터 · 출처">
           <SettingsRow
-            title="크롤링 도메인"
-            sub="knu.ac.kr · cs.knu.ac.kr · dorm.knu.ac.kr 외 4개"
-            right={<Button variant="pill">관리</Button>}
+            title="크롤링 대상"
+            sub="경북대학교 컴퓨터학부 공지사항"
           />
           <SettingsRow
             title="마지막 동기화"
             sub={
               syncMsg
                 ? syncMsg
-                : `${meta ? formatSyncTime(meta.lastCrawledAt) : '—'} · 자동 (매일 새벽 2시)`
+                : `${meta ? formatSyncTime(meta.lastCrawledAt) : '—'} · 공지 ${meta?.totalAnnouncements ?? 0}건`
             }
             right={
               <Button
@@ -132,13 +94,17 @@ export function SettingsPage({ onClose }: Props) {
             }
           />
           <SettingsRow
-            title="출처 없는 답변 차단"
-            sub='근거가 부족하면 "모른다"라고 답해요 (권장)'
+            title="관리자 토큰"
+            sub="서버 .env의 SYNC_ADMIN_TOKEN과 일치해야 합니다"
             right={
-              <Toggle
-                title="출처 없는 답변 차단"
-                on={pref.blockUnsourced}
-                onClick={() => setPref((p) => ({ ...p, blockUnsourced: !p.blockUnsourced }))}
+              <input
+                type="password"
+                value={syncToken}
+                onChange={(e) => setSyncToken(e.target.value)}
+                placeholder="토큰 입력"
+                className="h-9 w-[220px] rounded-cd-md border border-line bg-white px-3 text-[13px]
+                           text-ink outline-none transition-colors placeholder:text-ink-4
+                           focus:border-brand-400"
               />
             }
           />
@@ -189,25 +155,5 @@ function SettingsRow({
       </div>
       {right}
     </div>
-  );
-}
-
-function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; title: string }) {
-  return (
-    <button
-      type="button" aria-pressed={on} aria-label={title} onClick={onClick}
-      className={cn(
-        'relative h-[22px] w-[38px] flex-shrink-0 rounded-full border-0 p-0 transition-colors',
-        on ? 'bg-brand-500' : 'bg-line',
-      )}
-    >
-      <span
-        className={cn(
-          'absolute top-0.5 left-0.5 h-[18px] w-[18px] rounded-full bg-white shadow-sm',
-          'transition-transform',
-          on && 'translate-x-4',
-        )}
-      />
-    </button>
   );
 }

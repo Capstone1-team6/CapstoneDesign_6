@@ -31,6 +31,11 @@ os.makedirs(TMP_DIR, exist_ok=True)
 EMPTY_TEXT_THRESHOLD = 50
 
 
+def include_manual_files() -> bool:
+    """평가/실험용 수동 문서는 명시적으로 켠 경우에만 파싱한다."""
+    return os.getenv("INCLUDE_MANUAL_FILES", "").lower() in {"1", "true", "yes", "on"}
+
+
 def find_libreoffice():
     """LibreOffice 실행 파일 탐색.
     1) PATH의 soffice 2) Windows 기본 설치 경로 3) None
@@ -568,6 +573,7 @@ def parse_all():
         attachments = notice.get("attachments", [])
 
         if not attachments:
+            # 첨부가 없어도 공지 본문(content)은 notices_parsed.json에 남겨야 한다.
             continue
 
         print(f"\n[{wr_id}] {notice['title'][:40]}")
@@ -601,6 +607,9 @@ def parse_all():
         # 공지 단위로 저장 (크래시 시 이전 공지 결과 보존)
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(notices, f, ensure_ascii=False, indent=2)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(notices, f, ensure_ascii=False, indent=2)
 
     total_files = sum(len(n.get("attachments", [])) for n in notices)
     success = sum(
@@ -700,8 +709,9 @@ if __name__ == "__main__":
     else:
         print(f"[LibreOffice] {LIBREOFFICE}")
 
-    # 1. 기존 공지사항 첨부파일 파싱
-    # parse_all()
+    # 1. 공지 본문과 공지 첨부파일 파싱
+    parse_all()
 
-    # 2. 수동 업로드 파일 파싱
-    parse_manual_files()
+    # 2. 평가/실험용 수동 업로드 파일 파싱
+    if include_manual_files():
+        parse_manual_files()

@@ -9,6 +9,7 @@ import tempfile
 import opendataloader_pdf
 import pandas as pd
 from docx import Document
+from dotenv import load_dotenv
 
 # Windows 콘솔(cp949)에서도 한글/유니코드 출력 안전하게
 try:
@@ -27,8 +28,25 @@ TMP_DIR = os.path.join(BASE_DIR, "data", "tmp_convert")
 os.makedirs(PARSED_DIR, exist_ok=True)
 os.makedirs(TMP_DIR, exist_ok=True)
 
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
 # 추출 텍스트가 이 값보다 적으면 스캔본/변환 실패 가능성 경고
 EMPTY_TEXT_THRESHOLD = 50
+# opendataloader 결과가 이 미만이면 pdfplumber fallback 시도
+_PDFPLUMBER_FALLBACK_THRESHOLD = 1000
+
+# OpenAI 클라이언트 (LLM 표 구조화에 사용, 키 없으면 None)
+_openai_client = None
+try:
+    from openai import OpenAI as _OpenAI
+    _upstage_key = os.getenv("UPSTAGE_API_KEY")
+    if _upstage_key:
+        _openai_client = _OpenAI(
+            api_key=_upstage_key,
+            base_url="https://api.upstage.ai/v1",
+        )
+except ImportError:
+    pass
 
 
 def find_libreoffice():
@@ -204,6 +222,182 @@ def _annotate_markdown_table_rows(text: str) -> str:
     return '\n'.join(result)
 
 
+_TABLE_STRUCTURE_PROMPT = """다음은 PDF에서 추출한 텍스트입니다.
+텍스트 안에 표(table)가 있으면, 각 데이터 셀 앞에 컬럼 헤더를 붙여
+아래 형식으로 변환하세요:
+
+  [행레이블] 컬럼1: 값1 | 컬럼2: 값2 | ...
+
+규칙:
+- 첫 번째 컬럼이 범주형(비수치) 값이면 [행레이블]로 앞에 붙임
+- 표가 여러 개면 각각 변환
+- 표 이외의 텍스트는 그대로 유지
+- 표가 전혀 없으면 원문 그대로 출력
+
+예시 입력:
+  구분   토익  텝스(구TEPS)  개정텝스(New TEPS)  OPIc
+  700    120   600~605       264~265             IM1
+  800    130   637~          309~310             IM2
+
+예시 출력:
+  [700점 기준] 토익스피킹: 120 | 텝스(구TEPS): 600~605 | 개정텝스(New TEPS): 264~265 | OPIc: IM1
+  [800점 기준] 토익스피킹: 130 | 텝스(구TEPS): 637~ | 개정텝스(New TEPS): 309~310 | OPIc: IM2
+
+원문:
+{text}
+
+변환 결과:"""
+
+
+def _llm_structure_tables(text: str) -> str:
+    """OpenAI GPT-4o-mini로 페이지 텍스트의 표를 [레이블] 컬럼: 값 형식으로 변환.
+
+    pdfplumber가 표 구조를 감지하지 못한 페이지에 fallback으로 사용.
+    _openai_client 가 None이거나 오류 발생 시 원문 반환.
+    """
+    if not _openai_client or not text or not text.strip():
+        return text
+    prompt = _TABLE_STRUCTURE_PROMPT.format(text=text[:4000])
+    try:
+        resp = _openai_client.chat.completions.create(
+            model="solar-pro2",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=2000,
+        )
+        result = (resp.choices[0].message.content or "").strip()
+        return result if result else text
+    except Exception as e:
+        print(f"  [LLM 표 구조화 오류] {e}")
+        return text
+
+
+def _parse_pdf_pdfplumber(file_path: str) -> str:
+    """pdfplumber로 텍스트 + 표 구조 추출.
+
+    표의 각 셀에 컬럼 헤더를 부착해 청킹 후에도 의미를 보존한다.
+    - 다단 헤더(예: TOEFL → PBT/IBT/CBT 서브컬럼)는 2행을 합쳐 "TOEFL PBT" 식으로 병합
+    - 행 레이블이 범주형이면 [레이블] 앞에 붙임
+    - 표 외부 텍스트는 그대로 유지
+    opendataloader가 반환한 텍스트가 너무 짧을 때 fallback으로 호출된다.
+    """
+    try:
+        import pdfplumber
+    except ImportError:
+        return ""
+
+    _VALUE_UNITS = ('점', '원', '%', '학점', '이상', '이하', '회', '명', '개월', '년', '시간')
+
+    def _is_label_cell(s: str) -> bool:
+        return bool(s) and not s[0].isdigit() and not any(s.endswith(u) for u in _VALUE_UNITS)
+
+    def _forward_fill(cells: list[str]) -> list[str]:
+        filled, last = [], ""
+        for c in cells:
+            last = c if c else last
+            filled.append(last)
+        return filled
+
+    result_parts = []
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                page_parts = []
+                page_tables = page.find_tables()
+                table_bboxes = [t.bbox for t in page_tables]
+
+                def _is_data_table(data: list) -> bool:
+                    """레이아웃용 표(None 많음, 셀 내용 긺)가 아닌 데이터 표인지 판별."""
+                    if not data or len(data[0]) < 3:
+                        return False
+                    all_cells = [str(c or "") for row in data for c in row]
+                    # None/빈 셀 비율이 60% 이상이면 병합셀 많은 레이아웃 표
+                    none_ratio = sum(1 for c in all_cells if not c.strip()) / max(len(all_cells), 1)
+                    if none_ratio > 0.6:
+                        return False
+                    # 셀 내용 최대 길이가 200자 초과이면 단락 텍스트가 포함된 레이아웃 표
+                    max_len = max((len(c) for c in all_cells if c.strip()), default=0)
+                    return max_len <= 200
+
+                data_table_found = False
+                for tbl in page_tables:
+                    data = tbl.extract()
+                    if not data or not _is_data_table(data):
+                        continue
+
+                    data_table_found = True
+                    # 헤더 행 결정 — 1행 또는 (1행 + 2행) 합침
+                    headers = _forward_fill([str(c or "").strip() for c in data[0]])
+                    data_start = 1
+
+                    if len(data) >= 2:
+                        row2 = [str(c or "").strip() for c in data[1]]
+                        numeric_count = sum(
+                            1 for c in row2
+                            if c and (c[0].isdigit() or any(c.endswith(u) for u in _VALUE_UNITS))
+                        )
+                        if numeric_count == 0 and any(row2):
+                            # 2행도 헤더 → 합쳐서 "부모 자식" 형식
+                            merged = []
+                            for h, s in zip(headers, row2):
+                                if h and s and s != h:
+                                    merged.append(f"{h} {s}")
+                                else:
+                                    merged.append(h or s)
+                            headers = merged
+                            data_start = 2
+
+                    for row in data[data_start:]:
+                        if not row or all(not c for c in row):
+                            continue
+                        cells = [str(c or "").strip() for c in row]
+                        label = cells[0] if cells else ""
+                        use_label = _is_label_cell(label)
+                        start = 1 if use_label else 0
+
+                        pairs = [
+                            f"{headers[i]}: {cells[i]}"
+                            for i in range(start, len(cells))
+                            if i < len(headers) and cells[i] and headers[i]
+                        ]
+                        if pairs:
+                            row_text = " | ".join(pairs)
+                            page_parts.append(f"[{label}] {row_text}" if use_label else row_text)
+
+                # 표 영역을 제외한 일반 텍스트 추출
+                raw = page.extract_text() or ""
+                if data_table_found and table_bboxes:
+                    try:
+                        non_table = page.filter(
+                            lambda obj: not any(
+                                obj.get("x0", 0) >= b[0] - 2
+                                and obj.get("top", 0) >= b[1] - 2
+                                and obj.get("x1", 0) <= b[2] + 2
+                                and obj.get("bottom", 0) <= b[3] + 2
+                                for b in table_bboxes
+                            )
+                        ).extract_text() or ""
+                        if non_table.strip():
+                            page_parts.insert(0, non_table.strip())
+                    except Exception:
+                        if raw.strip():
+                            page_parts.insert(0, raw.strip())
+                else:
+                    # 데이터 표 미감지 → raw 텍스트를 LLM으로 구조화 시도
+                    if raw.strip():
+                        structured = _llm_structure_tables(raw.strip())
+                        page_parts.append(structured)
+
+                if page_parts:
+                    result_parts.append("\n".join(page_parts))
+
+    except Exception as e:
+        print(f"  [pdfplumber 오류] {file_path}: {e}")
+        return ""
+
+    return "\n\n".join(result_parts)
+
+
 def parse_pdf_batch(file_paths):
     """opendataloader_pdf로 여러 PDF를 한 번에 Markdown으로 변환.
     JVM 부팅이 호출당 ~수백ms라 배치가 필수. 반환: dict[절대경로]→markdown 텍스트.
@@ -265,6 +459,16 @@ def parse_pdf_batch(file_paths):
                     results[orig] = text
             except OSError as e:
                 print(f"  [PDF md 읽기 오류] {orig}: {e}")
+
+    # opendataloader 결과가 너무 짧으면 pdfplumber fallback
+    for p in abs_paths:
+        if len(results[p].strip()) < _PDFPLUMBER_FALLBACK_THRESHOLD:
+            fb = _parse_pdf_pdfplumber(p)
+            if fb and len(fb) > len(results[p]):
+                print(f"  [pdfplumber fallback] {os.path.basename(p)}: "
+                      f"{len(results[p])}자 → {len(fb)}자")
+                results[p] = fb
+
     return results
 
 

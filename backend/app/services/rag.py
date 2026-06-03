@@ -22,12 +22,26 @@ def _load_hybrid_module():
 
 @lru_cache(maxsize=1)
 def _load_notices_index() -> dict[str, dict]:
-    """notices.json 을 num 키로 인덱싱. url/date/title 조회용."""
+    """notices.json 을 wr_id와 num 키로 인덱싱. url/date/title 조회용."""
     if not os.path.exists(NOTICES_JSON_PATH):
         return {}
     with open(NOTICES_JSON_PATH, encoding="utf-8") as f:
         notices = json.load(f)
-    return {str(n.get("num", "")).strip(): n for n in notices if n.get("num")}
+
+    index: dict[str, dict] = {}
+    for notice in notices:
+        num = str(notice.get("num", "")).strip()
+        if num:
+            index[num] = notice
+        wr_id = str(notice.get("wr_id", "")).strip()
+        if not wr_id:
+            try:
+                wr_id = notice.get("url", "").split("wr_id=")[1].split("&")[0]
+            except IndexError:
+                wr_id = ""
+        if wr_id:
+            index[wr_id] = notice
+    return index
 
 
 def _make_summary(content: str, max_len: int = 120) -> str:
@@ -46,31 +60,34 @@ def _make_summary(content: str, max_len: int = 120) -> str:
 def _doc_to_source(doc: dict, notices_index: dict[str, dict]) -> dict:
     """vector_docs 항목 → AnnouncementSource dict.
 
-    chroma metadata 에 notice_num 이 없으므로 doc_key 에서 파싱:
+    chroma metadata 를 우선 사용하고, 없으면 doc_key 에서 파싱:
       manual::파일명          → source_type=manual
-      notice::번호::파일명    → source_type=notice, num=번호
+      notice::wr_id::파일명    → source_type=notice, notice_id=wr_id
+      notice_content::wr_id    → source_type=notice_content, notice_id=wr_id
     """
     doc_key = doc.get("doc_key", "") or ""
     chunk_id = doc.get("chunk_id", "") or ""
     file_name = doc.get("source", "") or ""
     content = doc.get("content", "") or ""
 
-    # doc_key 파싱으로 source_type / notice_num 추출
     parts = doc_key.split("::")
-    source_type = parts[0] if parts else ""
-    notice_num = parts[1] if source_type == "notice" and len(parts) >= 2 else ""
+    source_type = doc.get("source_type") or (parts[0] if parts else "")
+    notice_id = str(doc.get("notice_id") or "").strip()
+    if not notice_id and source_type in {"notice", "notice_content"} and len(parts) >= 2:
+        notice_id = parts[1]
+    notice_num = str(doc.get("notice_num") or "").strip()
 
-    notice_meta = notices_index.get(notice_num, {}) if notice_num else {}
+    notice_meta = notices_index.get(notice_id, {}) or notices_index.get(notice_num, {})
 
-    if source_type == "notice":
-        title = notice_meta.get("title") or file_name
-        url = notice_meta.get("url") or ""
-        published_at = notice_meta.get("date") or ""
+    if source_type in {"notice", "notice_content"}:
+        title = doc.get("notice_title") or notice_meta.get("title") or file_name
+        url = notice_meta.get("url") or doc.get("url") or ""
+        published_at = doc.get("date") or notice_meta.get("date") or ""
         category = "공지"
     else:
         title = file_name or "매뉴얼"
         url = ""
-        published_at = ""
+        published_at = doc.get("date") or ""
         category = "매뉴얼"
 
     source_id = chunk_id or doc_key or url or title or file_name

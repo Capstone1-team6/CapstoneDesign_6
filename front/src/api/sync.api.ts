@@ -24,8 +24,12 @@ export interface SyncStatus {
   finishedAt?: string | null;
 }
 
-export async function triggerSync(maxPages = 3): Promise<void> {
-  await http.post(ENDPOINTS.crawl, { maxPages });
+export async function triggerSync(maxPages = 3, syncToken: string): Promise<void> {
+  await http.post(
+    ENDPOINTS.crawl,
+    { maxPages },
+    { headers: { 'X-Sync-Token': syncToken } },
+  );
 }
 
 export async function fetchSyncStatus(): Promise<SyncStatus> {

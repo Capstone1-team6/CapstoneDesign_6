@@ -20,10 +20,12 @@ front/*.tsbuildinfo
 chroma_db
 data/app.db
 data/attachments
+data/manual_files
 data/parsed
 data/raw
 data/tmp_convert
 data/tmp_zip
+evaluation
 evaluation/results
 
 *.log

@@ -24,6 +24,8 @@ data/app.db
 data/parsed/
 data/raw/
 data/attachments/
+data/manual_files/
+data/graph_state.json
 data/tmp_convert/
 
 # TypeScript build cache

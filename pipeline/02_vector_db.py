@@ -1,9 +1,8 @@
-"""Vector DB 빌드 (Chroma) — manual + notices attachments 를 청킹해서 임베딩.
+"""Vector DB 빌드 (Chroma) — 공지 본문 + 공지 첨부파일을 청킹해서 임베딩.
 
 chunk_id 형식: {source_type}::{doc_key}::chunk{i}
   - 로딩 순서에 무관한 안정적 ID (03_graph_db.py 와 동일 규칙 공유)
-  - 예) manual::졸업요건.pdf::chunk0
-        notice::29121::2026년_공고문.pdf::chunk0
+  - 예) notice::29121::2026년_공고문.pdf::chunk0
         notice_content::29121::chunk0
 
 실행: python pipeline/02_vector_db.py
@@ -45,15 +44,32 @@ if not UPSTAGE_API_KEY:
     raise RuntimeError("UPSTAGE_API_KEY 가 .env 에 없음")
 
 
+def include_manual_files() -> bool:
+    """평가/실험용 수동 문서는 명시적으로 켠 경우에만 웹 인덱스에 포함한다."""
+    return os.getenv("INCLUDE_MANUAL_FILES", "").lower() in {"1", "true", "yes", "on"}
+
+
+def get_notice_id(notice: dict) -> str:
+    """게시글 고유 ID. 목록 번호(num)는 중복될 수 있어 wr_id를 우선 사용한다."""
+    wr_id = str(notice.get("wr_id") or "").strip()
+    if wr_id:
+        return wr_id
+    url = notice.get("url", "")
+    try:
+        return url.split("wr_id=")[1].split("&")[0]
+    except IndexError:
+        return str(notice.get("num") or "unknown")
+
+
 # ── chunk_id 생성 (03_graph_db.py 와 동일 규칙) ─────────────
-def make_doc_key(source_type: str, file_name: str, notice_num: str = "") -> str:
+def make_doc_key(source_type: str, file_name: str, notice_id: str = "") -> str:
     """문서의 고유 키. chunk_id 생성에 사용."""
     if source_type == "manual":
         return f"manual::{file_name}"
     elif source_type == "notice":
-        return f"notice::{notice_num}::{file_name}"
+        return f"notice::{notice_id}::{file_name}"
     elif source_type == "notice_content":
-        return f"notice_content::{notice_num}"
+        return f"notice_content::{notice_id}"
     return f"{source_type}::{file_name}"
 
 
@@ -63,13 +79,13 @@ def make_chunk_id(doc_key: str, chunk_index: int) -> str:
 
 # ── 문서 로드 ────────────────────────────────────────────────
 def load_documents() -> list[dict]:
-    """매뉴얼 + 공지 첨부파일 + 공지 본문을 단일 list 로 평탄화.
+    """공지 첨부파일 + 공지 본문을 단일 list 로 평탄화.
     각 항목: {doc_key, file_name, source_type, parsed_text, (notice_title), (date), (notice_num)}.
     """
     docs = []
 
     manual_path = os.path.join(PARSED_DIR, "manual_parsed.json")
-    if os.path.exists(manual_path):
+    if include_manual_files() and os.path.exists(manual_path):
         with open(manual_path, encoding="utf-8") as f:
             for m in json.load(f):
                 text = (m.get("parsed_text") or "").strip()
@@ -86,12 +102,13 @@ def load_documents() -> list[dict]:
     notices_path = os.path.join(PARSED_DIR, "notices_parsed.json")
     if os.path.exists(notices_path):
         with open(notices_path, encoding="utf-8") as f:
-            seen_nums: set[str] = set()
+            seen_ids: set[str] = set()
             for n in json.load(f):
-                num = str(n.get("num") or "unknown")
-                if num in seen_nums:
+                notice_id = get_notice_id(n)
+                num = str(n.get("num") or "").strip()
+                if notice_id in seen_ids:
                     continue
-                seen_nums.add(num)
+                seen_ids.add(notice_id)
 
                 title = (n.get("title") or "").strip()
                 date = (n.get("date") or "").strip()
@@ -103,10 +120,11 @@ def load_documents() -> list[dict]:
                         continue
                     att_name = a.get("name", "unknown")
                     docs.append({
-                        "doc_key": make_doc_key("notice", att_name, num),
+                        "doc_key": make_doc_key("notice", att_name, notice_id),
                         "file_name": att_name,
                         "source_type": "notice",
                         "notice_title": title,
+                        "notice_id": notice_id,
                         "notice_num": num,
                         "date": date,
                         "parsed_text": text,
@@ -116,10 +134,11 @@ def load_documents() -> list[dict]:
                 content = (n.get("content") or "").strip()
                 if content:
                     docs.append({
-                        "doc_key": make_doc_key("notice_content", "", num),
-                        "file_name": f"notice_{num}",
+                        "doc_key": make_doc_key("notice_content", "", notice_id),
+                        "file_name": f"notice_{notice_id}",
                         "source_type": "notice_content",
                         "notice_title": title,
+                        "notice_id": notice_id,
                         "notice_num": num,
                         "date": date,
                         "parsed_text": content,
@@ -172,6 +191,7 @@ def chunk_documents(docs: list[dict]) -> list[dict]:
                     "source_type": doc["source_type"],
                     "chunk_index": i,
                     **({"notice_title": title} if title else {}),
+                    **({"notice_id": doc["notice_id"]} if doc.get("notice_id") else {}),
                     **({"notice_num": doc["notice_num"]} if doc.get("notice_num") else {}),
                     **({"date": doc["date"]} if doc.get("date") else {}),
                 },

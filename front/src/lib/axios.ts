@@ -10,9 +10,8 @@ export const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// 요청 인터셉터 — 로깅·인증 토큰 부착 자리
+// 요청 인터셉터 — 공통 요청 옵션 확장 지점
 http.interceptors.request.use((config) => {
-  // TODO: auth 토큰 부착
   return config;
 });
 
@@ -20,7 +19,6 @@ http.interceptors.request.use((config) => {
 http.interceptors.response.use(
   (res) => res,
   (err) => {
-    // TODO: 토스트 등 글로벌 에러 처리
     return Promise.reject(err);
   },
 );

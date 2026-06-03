@@ -259,7 +259,7 @@ def _llm_structure_tables(text: str) -> str:
         return text
     prompt = _TABLE_STRUCTURE_PROMPT.format(text=text[:4000])
     try:
-        resp = _openai_client.chat.completions.create(
+        resp = _openai_client.with_options(timeout=30).chat.completions.create(
             model="solar-pro2",
             messages=[{"role": "user", "content": prompt}],
             temperature=0,

@@ -161,10 +161,18 @@ def _build_bm25_index():
     all_data = collection.get(include=["documents", "metadatas"])
     docs = []
     tokenized = []
-    for doc, meta in zip(all_data["documents"], all_data["metadatas"]):
+    for chunk_id, doc, meta in zip(all_data["ids"], all_data["documents"], all_data["metadatas"]):
+        meta = meta or {}
         docs.append({
             "content": doc,
-            "source": (meta or {}).get("file_name", ""),
+            "source": meta.get("file_name", ""),
+            "source_type": meta.get("source_type", ""),
+            "notice_id": meta.get("notice_id", ""),
+            "notice_num": meta.get("notice_num", ""),
+            "notice_title": meta.get("notice_title", ""),
+            "date": meta.get("date", ""),
+            "chunk_id": chunk_id,
+            "doc_key": meta.get("doc_key", ""),
         })
         # 토큰화: 공백 split + lowercase. 한국어/영어 혼재 대응.
         tokenized.append(doc.lower().split())
@@ -191,6 +199,13 @@ def bm25_search(query: str, top_k: int = 10) -> list[dict]:
             "content": d["content"],
             "source": d["source"],
             "score": float(scores[i]),
+            "source_type": d.get("source_type", ""),
+            "notice_id": d.get("notice_id", ""),
+            "notice_num": d.get("notice_num", ""),
+            "notice_title": d.get("notice_title", ""),
+            "date": d.get("date", ""),
+            "chunk_id": d.get("chunk_id", ""),
+            "doc_key": d.get("doc_key", ""),
         })
     return out
 
@@ -234,13 +249,19 @@ def _raw_vector_search(query, n_results):
     metadatas = results.get("metadatas", [[]])[0]
     distances = results.get("distances", [[]])[0]
     for chunk_id, doc, meta, dist in zip(ids, documents, metadatas, distances):
+        meta = meta or {}
         score = round(1 - dist, 3) if dist is not None else None
         docs.append({
             "content":  doc,
-            "source":   (meta or {}).get("file_name", ""),
+            "source":   meta.get("file_name", ""),
             "score":    score,
             "chunk_id": chunk_id,                          # Graph 브리지용
-            "doc_key":  (meta or {}).get("doc_key", ""),   # Graph 브리지용
+            "doc_key":  meta.get("doc_key", ""),           # Graph 브리지용
+            "source_type": meta.get("source_type", ""),
+            "notice_id": meta.get("notice_id", ""),
+            "notice_num": meta.get("notice_num", ""),
+            "notice_title": meta.get("notice_title", ""),
+            "date": meta.get("date", ""),
         })
     return docs
 
@@ -680,12 +701,18 @@ def fetch_chunks_by_ids(chunk_ids: list[str]) -> list[dict]:
             results.get("metadatas", []),
         ):
             if doc:
+                meta = meta or {}
                 docs.append({
                     "content":  doc,
-                    "source":   (meta or {}).get("file_name", ""),
+                    "source":   meta.get("file_name", ""),
                     "score":    None,
                     "chunk_id": cid,
-                    "doc_key":  (meta or {}).get("doc_key", ""),
+                    "doc_key":  meta.get("doc_key", ""),
+                    "source_type": meta.get("source_type", ""),
+                    "notice_id": meta.get("notice_id", ""),
+                    "notice_num": meta.get("notice_num", ""),
+                    "notice_title": meta.get("notice_title", ""),
+                    "date": meta.get("date", ""),
                 })
         return docs
     except Exception as e:

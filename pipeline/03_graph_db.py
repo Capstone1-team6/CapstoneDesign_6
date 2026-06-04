@@ -63,6 +63,23 @@ MAX_ENTITIES = 15
 MAX_RELATIONS = 20
 
 
+def include_manual_files() -> bool:
+    """평가/실험용 수동 문서는 명시적으로 켠 경우에만 웹 그래프에 포함한다."""
+    return os.getenv("INCLUDE_MANUAL_FILES", "").lower() in {"1", "true", "yes", "on"}
+
+
+def get_notice_id(notice: dict) -> str:
+    """게시글 고유 ID. 목록 번호(num)는 중복될 수 있어 wr_id를 우선 사용한다."""
+    wr_id = str(notice.get("wr_id") or "").strip()
+    if wr_id:
+        return wr_id
+    url = notice.get("url", "")
+    try:
+        return url.split("wr_id=")[1].split("&")[0]
+    except IndexError:
+        return str(notice.get("num") or "unknown")
+
+
 # ══════════════════════════════════════════════════════════════
 # Step 1: 상수 / 유틸
 # ══════════════════════════════════════════════════════════════
@@ -131,13 +148,13 @@ def sanitize_rel_type(rel_type: str) -> str:
     return cleaned or "RELATED_TO"
 
 
-def make_doc_key(source_type: str, file_name: str, notice_num: str = "") -> str:
+def make_doc_key(source_type: str, file_name: str, notice_id: str = "") -> str:
     if source_type == "manual":
         return f"manual::{file_name}"
     elif source_type == "notice":
-        return f"notice::{notice_num}::{file_name}"
+        return f"notice::{notice_id}::{file_name}"
     elif source_type == "notice_content":
-        return f"notice_content::{notice_num}"
+        return f"notice_content::{notice_id}"
     return f"{source_type}::{file_name}"
 
 
@@ -169,7 +186,7 @@ def load_documents() -> list[dict]:
     docs = []
 
     manual_path = os.path.join(PARSED_DIR, "manual_parsed.json")
-    if os.path.exists(manual_path):
+    if include_manual_files() and os.path.exists(manual_path):
         with open(manual_path, encoding="utf-8") as f:
             for m in json.load(f):
                 text = (m.get("parsed_text") or "").strip()
@@ -189,12 +206,13 @@ def load_documents() -> list[dict]:
     notices_path = os.path.join(PARSED_DIR, "notices_parsed.json")
     if os.path.exists(notices_path):
         with open(notices_path, encoding="utf-8") as f:
-            seen_nums: set[str] = set()
+            seen_ids: set[str] = set()
             for n in json.load(f):
-                num = str(n.get("num") or "unknown")
-                if num in seen_nums:
+                notice_id = get_notice_id(n)
+                num = str(n.get("num") or "").strip()
+                if notice_id in seen_ids:
                     continue
-                seen_nums.add(num)
+                seen_ids.add(notice_id)
                 title = (n.get("title") or "").strip()
                 date  = (n.get("date")  or "").strip()
 
@@ -204,10 +222,11 @@ def load_documents() -> list[dict]:
                         continue
                     att_name = a.get("name", "unknown")
                     docs.append({
-                        "doc_key":      make_doc_key("notice", att_name, num),
+                        "doc_key":      make_doc_key("notice", att_name, notice_id),
                         "file_name":    att_name,
                         "source_type":  "notice",
                         "notice_title": title,
+                        "notice_id":    notice_id,
                         "notice_num":   num,
                         "date":         date,
                         "parsed_text":  text,
@@ -216,10 +235,11 @@ def load_documents() -> list[dict]:
                 content = (n.get("content") or "").strip()
                 if content:
                     docs.append({
-                        "doc_key":      make_doc_key("notice_content", "", num),
-                        "file_name":    f"notice_{num}",
+                        "doc_key":      make_doc_key("notice_content", "", notice_id),
+                        "file_name":    f"notice_{notice_id}",
                         "source_type":  "notice_content",
                         "notice_title": title,
+                        "notice_id":    notice_id,
                         "notice_num":   num,
                         "date":         date,
                         "parsed_text":  content,
@@ -238,14 +258,22 @@ _splitter = RecursiveCharacterTextSplitter(
         "\n1) ", "\n2) ", "\n3) ", "\n4) ", "\n5) ",
         "\n① ", "\n② ", "\n③ ", "\n④ ", "\n⑤ ",
         "\n- ", "\n* ",
-        "\n", ". ", " ", "",
+        "\n",
+        ". ", "。", "! ", "? ",
+        " ", "",
     ],
     length_function=len,
 )
 
 
+def indexed_text(doc: dict) -> str:
+    """02_vector_db.py와 같은 텍스트로 청킹해 chunk_id 브리지를 보존한다."""
+    title = doc.get("notice_title", "")
+    return f"[{title}]\n{doc['parsed_text']}" if title else doc["parsed_text"]
+
+
 def split_document(doc: dict) -> list[dict]:
-    text    = doc["parsed_text"]
+    text    = indexed_text(doc)
     doc_key = doc["doc_key"]
     chunks  = _splitter.split_text(text) or [text]
     return [
@@ -469,6 +497,8 @@ def write_document(session, doc: dict):
         SET d.file_name     = $file_name,
             d.source_type   = $source_type,
             d.notice_title  = $notice_title,
+            d.notice_id     = $notice_id,
+            d.notice_num    = $notice_num,
             d.date          = $date,
             d.content_hash  = $content_hash
         """,
@@ -477,8 +507,10 @@ def write_document(session, doc: dict):
             "file_name":    doc["file_name"],
             "source_type":  doc["source_type"],
             "notice_title": doc.get("notice_title", ""),
+            "notice_id":    doc.get("notice_id", ""),
+            "notice_num":   doc.get("notice_num", ""),
             "date":         doc.get("date", ""),
-            "content_hash": content_hash(doc["parsed_text"]),
+            "content_hash": content_hash(indexed_text(doc)),
         },
     )
 
@@ -626,7 +658,7 @@ def build_graph(rebuild: bool = False):
 
     to_process = [
         d for d in docs
-        if rebuild or state.get(d["doc_key"]) != content_hash(d["parsed_text"])
+        if rebuild or state.get(d["doc_key"]) != content_hash(indexed_text(d))
     ]
 
     skipped = len(docs) - len(to_process)
@@ -643,7 +675,7 @@ def build_graph(rebuild: bool = False):
             try:
                 entity_cnt = process_document(driver, doc)
                 print(f"  → 엔티티 {entity_cnt}개 저장")
-                state[doc["doc_key"]] = content_hash(doc["parsed_text"])
+                state[doc["doc_key"]] = content_hash(indexed_text(doc))
                 save_state(state)
             except Exception as e:
                 print(f"  [오류] {type(e).__name__}: {e}")

@@ -56,6 +56,10 @@ def parse_notice_list(html):
         title = target_link.get_text(strip=True)
         href = target_link.get("href", "")
         url = href if href.startswith("http") else "https://cse.knu.ac.kr" + href
+        try:
+            wr_id = url.split("wr_id=")[1].split("&")[0]
+        except IndexError:
+            wr_id = ""
 
         date_td = row.select_one("td.td_datetime")
         date = date_td.get_text(strip=True) if date_td else ""
@@ -65,6 +69,7 @@ def parse_notice_list(html):
 
         notices.append({
             "num": num,
+            "wr_id": wr_id,
             "title": title,
             "url": url,
             "date": date

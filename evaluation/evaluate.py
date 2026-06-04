@@ -273,6 +273,15 @@ def _add_detail_sheet(wb, rows, H_FONT, B_FONT, N_FONT, AL_C, AL_TL, AL_TC,
         ("H_graph_count", 10),
         ("H_graph_preview", 30),
         ("H_error", 20),
+        # ─ RAGAS ─
+        ("V_faithfulness", 12),
+        ("V_answer_relevancy", 14),
+        ("V_context_precision", 14),
+        ("V_context_recall", 12),
+        ("H_faithfulness", 12),
+        ("H_answer_relevancy", 14),
+        ("H_context_precision", 14),
+        ("H_context_recall", 12),
     ]
     headers = [c[0] for c in columns]
     widths = [c[1] for c in columns]
@@ -330,6 +339,15 @@ def _add_detail_sheet(wb, rows, H_FONT, B_FONT, N_FONT, AL_C, AL_TL, AL_TC,
             r.get("hybrid_graph_count", 0),
             r.get("hybrid_graph_preview", ""),
             r.get("hybrid_error", ""),
+            # RAGAS
+            r.get("vector_ragas_faithfulness"),
+            r.get("vector_ragas_answer_relevancy"),
+            r.get("vector_ragas_context_precision"),
+            r.get("vector_ragas_context_recall"),
+            r.get("hybrid_ragas_faithfulness"),
+            r.get("hybrid_ragas_answer_relevancy"),
+            r.get("hybrid_ragas_context_precision"),
+            r.get("hybrid_ragas_context_recall"),
         ]
         for col_idx, val in enumerate(data, start=1):
             safe_val = _xlsx_safe(val)
@@ -561,6 +579,7 @@ def evaluate_one(module, item, index, judge_llm=None):
         "vector_sources": "",
         "vector_scored_sources": "",
         "vector_context_preview": "",
+        "vector_contexts": [],
         "vector_error": "",
 
         "hybrid_success": False,
@@ -572,6 +591,7 @@ def evaluate_one(module, item, index, judge_llm=None):
         "hybrid_graph_count": 0,
         "hybrid_graph_preview": "",
         "hybrid_context_preview": "",
+        "hybrid_contexts": [],
         "hybrid_error": "",
     }
 
@@ -592,6 +612,7 @@ def evaluate_one(module, item, index, judge_llm=None):
         row["vector_sources"] = vector_summary["sources"]
         row["vector_scored_sources"] = vector_summary["scored_sources"]
         row["vector_context_preview"] = truncate_text(vector_result.get("context", ""))
+        row["vector_contexts"] = [d.get("content", "") for d in vector_docs if d.get("content", "").strip()]
     except Exception as e:
         row["vector_error"] = f"{type(e).__name__}: {e}"
 
@@ -624,6 +645,7 @@ def evaluate_one(module, item, index, judge_llm=None):
         row["hybrid_graph_count"] = graph_summary["count"]
         row["hybrid_graph_preview"] = graph_summary["preview"]
         row["hybrid_context_preview"] = truncate_text(hybrid_result.get("context", ""))
+        row["hybrid_contexts"] = [d.get("content", "") for d in hybrid_docs if d.get("content", "").strip()]
     except Exception as e:
         row["hybrid_error"] = f"{type(e).__name__}: {e}"
 
@@ -641,6 +663,90 @@ def evaluate_one(module, item, index, judge_llm=None):
         row["hybrid_judge_reason"] = "judge 미설정"
 
     return row
+
+
+# ── RAGAS 지표 계산 ───────────────────────────────────────
+_RAGAS_METRICS = ("faithfulness", "answer_relevancy", "context_precision", "context_recall")
+
+
+def _compute_ragas_metrics(rows: list) -> None:
+    """RAGAS 4개 지표를 rows에 in-place로 추가.
+
+    faithfulness      : 답변이 컨텍스트에 근거한 정도
+    answer_relevancy  : 답변이 질문과 관련된 정도
+    context_precision : 검색된 컨텍스트 중 관련 있는 비율 (ground_truth 필요)
+    context_recall    : ground_truth를 컨텍스트가 커버하는 정도 (ground_truth 필요)
+
+    실패 시 None으로 채워 평가는 계속 진행.
+    """
+    import warnings
+    warnings.filterwarnings("ignore")
+
+    # 초기화
+    for row in rows:
+        for prefix in ("vector", "hybrid"):
+            for m in _RAGAS_METRICS:
+                row[f"{prefix}_ragas_{m}"] = None
+
+    try:
+        from datasets import Dataset as HFDataset
+        from ragas import evaluate as ragas_evaluate
+        from ragas.metrics import (
+            faithfulness, answer_relevancy,
+            context_precision, context_recall,
+        )
+        from ragas.llms import LangchainLLMWrapper
+        from ragas.embeddings import LangchainEmbeddingsWrapper
+        from langchain_upstage import ChatUpstage, UpstageEmbeddings
+    except ImportError as e:
+        print(f"[RAGAS] import 실패 (건너뜀): {e}")
+        return
+
+    api_key = os.getenv("UPSTAGE_API_KEY")
+    if not api_key:
+        print("[RAGAS] UPSTAGE_API_KEY 없음 (건너뜀)")
+        return
+
+    llm = LangchainLLMWrapper(ChatUpstage(api_key=api_key, model="solar-pro2"))
+    emb = LangchainEmbeddingsWrapper(UpstageEmbeddings(api_key=api_key, model="embedding-query"))
+    faithfulness.llm = llm
+    answer_relevancy.llm = llm
+    answer_relevancy.embeddings = emb
+    context_precision.llm = llm
+    context_recall.llm = llm
+    metrics = [faithfulness, answer_relevancy, context_precision, context_recall]
+
+    print("\n[RAGAS] 지표 계산 시작...")
+
+    for prefix in ("vector", "hybrid"):
+        answer_key = f"{prefix}_answer"
+        ctx_key = f"{prefix}_contexts"
+        valid = [(i, r) for i, r in enumerate(rows)
+                 if r.get(answer_key, "").strip() and r.get(ctx_key)]
+        if not valid:
+            print(f"[RAGAS] {prefix}: 유효 행 없음, 건너뜀")
+            continue
+
+        data = {
+            "user_input":        [r["question"]         for _, r in valid],
+            "response":          [r[answer_key]          for _, r in valid],
+            "retrieved_contexts":[r.get(ctx_key, [])     for _, r in valid],
+            "reference":         [r.get("ground_truth", "") for _, r in valid],
+        }
+        try:
+            dataset = HFDataset.from_dict(data)
+            result = ragas_evaluate(dataset, metrics=metrics)
+            result_df = result.to_pandas()
+            for df_idx, (row_idx, row) in enumerate(valid):
+                if df_idx < len(result_df):
+                    for m in _RAGAS_METRICS:
+                        val = result_df.iloc[df_idx].get(m)
+                        row[f"{prefix}_ragas_{m}"] = (
+                            round(float(val), 4) if val is not None and val == val else None
+                        )
+            print(f"[RAGAS] {prefix}: {len(valid)}개 완료")
+        except Exception as e:
+            print(f"[RAGAS] {prefix} 계산 실패: {e}")
 
 
 # ── 평가 범위 입력 ────────────────────────────────────────
@@ -775,6 +881,8 @@ def run_evaluation():
     if not rows:
         print("[종료] 저장할 결과 없음")
         return {}
+
+    _compute_ragas_metrics(rows)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     xlsx_path = os.path.join(RESULTS_DIR, f"evaluation_results_{timestamp}.xlsx")

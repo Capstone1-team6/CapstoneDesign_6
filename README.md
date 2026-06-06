@@ -216,7 +216,7 @@ python pipeline/03_graph_db.py --rebuild # 전체 재구축
 
 ### 벤치마크 데이터셋 (`evaluation/qa_dataset.json`)
 
-110개의 질문-정답 쌍, 3가지 유형:
+104개의 질문-정답 쌍, 3가지 유형:
 
 | 유형 | 설명 |
 |------|------|
@@ -328,12 +328,12 @@ python evaluation/evaluate_all_models.py
 `evaluate.py` 실행 시 평가 범위를 대화형으로 선택합니다.
 
 ```
-평가 범위 선택  (QA 데이터셋 총 110개 항목)
+평가 범위 선택  (QA 데이터셋 총 104개 항목)
   입력 형식:
-    0      전체 평가 (1~110번, 110개 모두)
+    0      전체 평가 (1~104번, 104개 모두)
     N      N번 항목 1개만        예) 5
     N,M    N번~M번 범위 평가     예) 1,50  →  1~50번
-    N,     N번부터 끝까지        예) 51,   →  51~110번
+    N,     N번부터 끝까지        예) 51,   →  51~104번
     ,M     처음부터 M번까지      예) ,30   →  1~30번
   입력 >
 ```
@@ -378,7 +378,7 @@ KNU/
 ├── evaluation/
 │   ├── evaluate.py                 # 단일 모델 평가
 │   ├── evaluate_all_models.py      # 전체 모델 일괄 평가
-│   └── qa_dataset.json             # 110개 벤치마크 Q&A
+│   └── qa_dataset.json             # 104개 벤치마크 Q&A
 │
 ├── data/
 │   ├── raw/                        # 크롤링 원본 (notices.json)

@@ -23,6 +23,7 @@ data/attachments
 data/manual_files
 data/parsed
 data/raw
+data/vector_state.json
 data/tmp_convert
 data/tmp_zip
 evaluation

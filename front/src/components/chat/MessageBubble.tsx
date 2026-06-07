@@ -8,6 +8,7 @@ import { IconButton } from '@/components/common/IconButton';
 import { RAGPipeline } from './RAGPipeline';
 import { AnnouncementCard } from './AnnouncementCard';
 import { MiniGraph } from './MiniGraph';
+import { RetrievalDebugPanel } from './RetrievalDebugPanel';
 import { Markdown } from '@/utils/parseMarkdown';
 import { cn } from '@/utils/cn';
 import { useSidebarStore } from '@/store/sidebarStore';
@@ -31,6 +32,7 @@ export function MessageBubble({
   showMiniGraph,
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [showRetrieval, setShowRetrieval] = useState(false);
   // 보관함 상태는 sidebarStore가 단일 출처. msg.isBookmarked 플래그는 무시.
   const isBookmarked = useSidebarStore((s) => s.bookmarks.some((b) => b.messageId === msg.id));
   const handleCopy = () => {
@@ -125,6 +127,29 @@ export function MessageBubble({
                 graphKey={msg.graphKey ?? 'general'}
                 onExpand={() => onExpandGraph(msg)}
               />
+            )}
+
+            {!msg.streaming && msg.retrieval && (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRetrieval((s) => !s)}
+                  className="flex items-center gap-1.5 rounded-md border-0 bg-transparent
+                             px-2 py-1 text-[11.5px] font-medium text-ink-3
+                             cursor-pointer transition-colors hover:bg-canvas hover:text-ink-2"
+                  aria-expanded={showRetrieval}
+                >
+                  <Icon.Search />
+                  {showRetrieval ? '검색 과정 접기' : '검색 과정 보기'}
+                  <span className="text-ink-4">
+                    · Vector {msg.retrieval.vector.length} · Graph {msg.retrieval.graph.length}
+                    {msg.retrieval.contextLength > 0
+                      ? ` · 컨텍스트 ${msg.retrieval.contextLength.toLocaleString()}자`
+                      : ''}
+                  </span>
+                </button>
+                {showRetrieval && <RetrievalDebugPanel data={msg.retrieval} />}
+              </div>
             )}
 
             {!msg.streaming && msg.followups && msg.followups.length > 0 && (

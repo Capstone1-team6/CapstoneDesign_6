@@ -31,10 +31,15 @@ _RAGAS_METRICS = ("faithfulness", "answer_relevancy", "context_precision", "cont
 
 def _pick_json() -> str:
     if len(sys.argv) > 1:
-        path = sys.argv[1]
-        if not os.path.isabs(path):
-            path = os.path.join(RESULTS_DIR, path)
-        return path
+        arg = sys.argv[1]
+        if os.path.isabs(arg):
+            return arg
+        # glob 패턴 포함 여부 확인
+        candidates = glob.glob(arg) or glob.glob(os.path.join(RESULTS_DIR, arg))
+        if candidates:
+            return sorted(candidates)[-1]
+        # bare filename → RESULTS_DIR 기준
+        return os.path.join(RESULTS_DIR, arg)
     files = sorted(glob.glob(os.path.join(RESULTS_DIR, "evaluation_results_*.json")))
     if not files:
         raise FileNotFoundError(f"결과 JSON 없음: {RESULTS_DIR}")
@@ -68,6 +73,12 @@ def compute_ragas(rows: list) -> None:
     context_precision.llm = llm
     context_recall.llm = llm
     metrics = [faithfulness, answer_relevancy, context_precision, context_recall]
+
+    # 재실행 시 이전 값이 섞이지 않도록 전체 초기화
+    for row in rows:
+        for prefix in ("vector", "hybrid"):
+            for m in _RAGAS_METRICS:
+                row[f"{prefix}_ragas_{m}"] = None
 
     for prefix in ("vector", "hybrid"):
         answer_key = f"{prefix}_answer"
@@ -206,15 +217,21 @@ def main():
     print(f"[대상] {json_path}")
 
     with open(json_path, encoding="utf-8") as f:
-        rows = json.load(f)
-    if isinstance(rows, dict):
-        rows = rows.get("results", rows)
+        payload = json.load(f)
+
+    # results 래퍼 구조 보존
+    if isinstance(payload, dict):
+        rows = payload.get("results", [])
+        payload["results"] = rows
+    else:
+        rows = payload
+        payload = rows
 
     compute_ragas(rows)
 
-    # JSON 저장
+    # JSON 저장 (원본 구조 유지)
     with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(rows, f, ensure_ascii=False, indent=2)
+        json.dump(payload, f, ensure_ascii=False, indent=2)
     print(f"\n[JSON 저장] {json_path}")
 
     # xlsx 업데이트

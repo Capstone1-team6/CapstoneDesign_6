@@ -1,4 +1,4 @@
-"""Vector DB 빌드 (Chroma) — 공지 본문 + 공지 첨부파일을 청킹해서 임베딩.
+﻿"""Vector DB 빌드 (Chroma) — 공지 본문 + 공지 첨부파일을 청킹해서 임베딩.
 
 chunk_id 형식: {source_type}::{doc_key}::chunk{i}
   - 로딩 순서에 무관한 안정적 ID (03_graph_db.py 와 동일 규칙 공유)
@@ -10,6 +10,7 @@ chunk_id 형식: {source_type}::{doc_key}::chunk{i}
 import os
 import sys
 import json
+import hashlib
 
 from dotenv import load_dotenv
 import chromadb
@@ -29,6 +30,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
 PARSED_DIR = os.path.join(BASE_DIR, "data", "parsed")
 CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
+VECTOR_STATE_PATH = os.path.join(BASE_DIR, "data", "vector_state.json")
 load_dotenv(ENV_PATH)
 
 # ── 청킹 / 임베딩 설정 ──
@@ -75,6 +77,32 @@ def make_doc_key(source_type: str, file_name: str, notice_id: str = "") -> str:
 
 def make_chunk_id(doc_key: str, chunk_index: int) -> str:
     return f"{doc_key}::chunk{chunk_index}"
+
+
+def indexed_text(doc: dict) -> str:
+    title = doc.get("notice_title", "")
+    return f"[{title}]\n{doc['parsed_text']}" if title else doc["parsed_text"]
+
+
+def content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def load_vector_state() -> dict:
+    if not os.path.exists(VECTOR_STATE_PATH):
+        return {}
+    try:
+        with open(VECTOR_STATE_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_vector_state(state: dict) -> None:
+    os.makedirs(os.path.dirname(VECTOR_STATE_PATH), exist_ok=True)
+    with open(VECTOR_STATE_PATH, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2, sort_keys=True)
 
 
 # ── 문서 로드 ────────────────────────────────────────────────
@@ -175,7 +203,7 @@ def chunk_documents(docs: list[dict]) -> list[dict]:
     skipped = 0
     for doc in docs:
         title = doc.get("notice_title", "")
-        text = f"[{title}]\n{doc['parsed_text']}" if title else doc["parsed_text"]
+        text = indexed_text(doc)
         doc_key = doc["doc_key"]
 
         for i, chunk_text in enumerate(splitter.split_text(text)):
@@ -203,20 +231,17 @@ def chunk_documents(docs: list[dict]) -> list[dict]:
 
 
 def main():
-    print(f"[설정] chunk_size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP}, min_len={MIN_CHUNK_LEN}")
-    print(f"[설정] embedding={EMBEDDING_MODEL}, collection={COLLECTION_NAME}")
+    print(f"[config] chunk_size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP}, min_len={MIN_CHUNK_LEN}")
+    print(f"[config] embedding={EMBEDDING_MODEL}, collection={COLLECTION_NAME}")
 
     docs = load_documents()
     manual_docs = sum(1 for d in docs if d["source_type"] == "manual")
     att_docs = sum(1 for d in docs if d["source_type"] == "notice")
     content_docs = sum(1 for d in docs if d["source_type"] == "notice_content")
-    print(f"\n[로드] 문서 {len(docs)}개 (manual={manual_docs}, 첨부={att_docs}, 공지본문={content_docs})")
-
-    chunks = chunk_documents(docs)
-    print(f"[청킹] 청크 {len(chunks)}개")
-    if chunks:
-        lens = [len(c["text"]) for c in chunks]
-        print(f"  길이 평균 {sum(lens)//len(lens)}자, 최소 {min(lens)}, 최대 {max(lens)}")
+    print(
+        f"\n[load] docs={len(docs)} "
+        f"(manual={manual_docs}, attachments={att_docs}, notice_content={content_docs})"
+    )
 
     embedding_fn = UpstageEmbeddings(model=EMBEDDING_MODEL, api_key=UPSTAGE_API_KEY)
 
@@ -225,13 +250,52 @@ def main():
     )
 
     try:
-        client.delete_collection(COLLECTION_NAME)
-        print(f"[초기화] 기존 컬렉션 '{COLLECTION_NAME}' 삭제")
+        coll = client.get_collection(COLLECTION_NAME)
     except Exception:
-        pass
-    coll = client.create_collection(COLLECTION_NAME)
+        coll = client.create_collection(COLLECTION_NAME)
 
-    print(f"[임베딩] {len(chunks)}개 chunk 를 batch={BATCH_SIZE} 로 처리")
+    state = load_vector_state()
+    try:
+        existing_ids = set(coll.get()["ids"])
+    except Exception:
+        existing_ids = set()
+
+    docs_to_index = []
+    skipped_docs = 0
+    for doc in docs:
+        doc_key = doc["doc_key"]
+        doc_hash = content_hash(indexed_text(doc))
+        doc_chunks = chunk_documents([doc])
+        expected_ids = [c["id"] for c in doc_chunks]
+
+        if state.get(doc_key) == doc_hash and all(i in existing_ids for i in expected_ids):
+            skipped_docs += 1
+            continue
+        if doc_key not in state and expected_ids and all(i in existing_ids for i in expected_ids):
+            state[doc_key] = doc_hash
+            skipped_docs += 1
+            continue
+
+        docs_to_index.append((doc, doc_hash, doc_chunks))
+
+    chunks = []
+    for doc, doc_hash, doc_chunks in docs_to_index:
+        doc_key = doc["doc_key"]
+        try:
+            coll.delete(where={"doc_key": doc_key})
+        except Exception:
+            pass
+        for chunk in doc_chunks:
+            chunk["metadata"]["doc_hash"] = doc_hash
+        chunks.extend(doc_chunks)
+
+    print(f"[incremental] docs={len(docs)} skipped={skipped_docs} indexing={len(docs_to_index)}")
+    print(f"[chunks] {len(chunks)} chunks to embed")
+    if chunks:
+        lens = [len(c["text"]) for c in chunks]
+        print(f"  length avg={sum(lens)//len(lens)} min={min(lens)} max={max(lens)}")
+
+    print(f"[embedding] process {len(chunks)} chunks with batch={BATCH_SIZE}")
     for start in range(0, len(chunks), BATCH_SIZE):
         batch = chunks[start:start + BATCH_SIZE]
         texts = [c["text"] for c in batch]
@@ -244,8 +308,12 @@ def main():
         )
         print(f"  batch {start // BATCH_SIZE + 1}: {start+1}-{start+len(batch)} / {len(chunks)}")
 
-    print(f"\n[완료] '{COLLECTION_NAME}' 컬렉션 {coll.count()}개 chunk")
+    for doc, doc_hash, _ in docs_to_index:
+        state[doc["doc_key"]] = doc_hash
+    save_vector_state(state)
 
+    print(f"\n[done] collection '{COLLECTION_NAME}' has {coll.count()} chunks")
 
 if __name__ == "__main__":
     main()
+

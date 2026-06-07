@@ -2,7 +2,7 @@
 
 The public API is still named "crawl" for frontend compatibility, but the
 operation now reflects new data into search: crawl, download attachments, parse,
-rebuild Chroma, update Neo4j, then clear in-process RAG caches.
+incrementally update Chroma and Neo4j, then clear in-process RAG caches.
 """
 from __future__ import annotations
 
@@ -42,6 +42,27 @@ _state = {
     "finished_at": None,
 }
 
+# 최근 동기화 로그 ring buffer — 대시보드에서 폴링해서 보여줌
+_LOG_BUFFER_MAX = 200
+_log_buffer: list[dict] = []
+
+
+def _append_log(level: str, step: SyncStep, message: str) -> None:
+    with _lock:
+        _log_buffer.append({
+            "ts": _now(),
+            "level": level,
+            "step": step,
+            "message": message,
+        })
+        if len(_log_buffer) > _LOG_BUFFER_MAX:
+            del _log_buffer[: len(_log_buffer) - _LOG_BUFFER_MAX]
+
+
+def recent_logs() -> list[dict]:
+    with _lock:
+        return list(_log_buffer)
+
 
 @lru_cache(maxsize=1)
 def _load_crawler_module():
@@ -64,6 +85,9 @@ def _set_state(
     started_at: str | None = None,
     finished_at: str | None = None,
 ) -> None:
+    log_step: SyncStep | None = None
+    log_message: str | None = None
+    log_level = "info"
     with _lock:
         if running is not None:
             _state["running"] = running
@@ -77,6 +101,14 @@ def _set_state(
             _state["started_at"] = started_at
         if finished_at is not None:
             _state["finished_at"] = finished_at
+        # 단계/메시지 변화 시 로그 1줄 (락 안에서 채우고 밖에서 append — re-entrancy 방지)
+        if step is not None or message is not None:
+            log_step = _state["step"]
+            log_message = _state["message"]
+            if step == "error" or last_error:
+                log_level = "error"
+    if log_step is not None:
+        _append_log(log_level, log_step, log_message or "")
 
 
 def _run_pipeline_script(
@@ -152,8 +184,8 @@ def run_full_sync(max_pages: int = 3) -> None:
         module.download_attachments(notices)
 
         _run_pipeline_script("01_parser.py", "parse", "문서와 첨부파일을 파싱하는 중")
-        _run_pipeline_script("02_vector_db.py", "vector", "Vector DB를 재빌드하는 중")
-        _run_pipeline_script("03_graph_db.py", "graph", "Graph DB를 재빌드하는 중", "--rebuild")
+        _run_pipeline_script("02_vector_db.py", "vector", "Vector DB를 증분 갱신하는 중")
+        _run_pipeline_script("03_graph_db.py", "graph", "Graph DB를 증분 갱신하는 중")
         _clear_rag_caches()
 
         _set_state(

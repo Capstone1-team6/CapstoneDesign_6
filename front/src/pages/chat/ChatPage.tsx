@@ -19,9 +19,10 @@ import type { KnowledgeGraph } from '@/types/graph.type';
 
 interface Props {
   onOpenSettings: () => void;
+  onOpenAdmin: () => void;
 }
 
-export function ChatPage({ onOpenSettings }: Props) {
+export function ChatPage({ onOpenSettings, onOpenAdmin }: Props) {
   const messages = useChatStore((s) => s.messages);
   const { send, abort, retryLast, isStreaming } = useChat();
   const { addBookmark, removeBookmark } = useSidebarStore();
@@ -74,7 +75,11 @@ export function ChatPage({ onOpenSettings }: Props) {
            }} />
       <Sidebar onOpenSettings={onOpenSettings} />
       <main className="relative z-[1] flex min-w-0 flex-1 flex-col">
-        <Header onOpenGraph={handleOpenTopicGraph} />
+        <Header
+          onOpenGraph={handleOpenTopicGraph}
+          onOpenAdmin={onOpenAdmin}
+          onOpenSettings={onOpenSettings}
+        />
         {isWelcome ? (
           <WelcomeScreen onPick={(q) => void send(q.title, q.id)} />
         ) : (

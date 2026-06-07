@@ -122,6 +122,9 @@ export function useChat() {
               graphData: chunk.graphData,
             });
             return;
+          case 'retrieval':
+            updateMessage(assistantId, { retrieval: chunk.retrieval });
+            return;
           case 'session':
             if (chunk.sessionId) setSessionId(chunk.sessionId);
             return;

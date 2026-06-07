@@ -12,9 +12,11 @@ import { formatSyncTime } from '@/utils/formatDate';
 
 interface Props {
   onOpenGraph: () => void;
+  onOpenAdmin?: () => void;
+  onOpenSettings?: () => void;
 }
 
-export function Header({ onOpenGraph }: Props) {
+export function Header({ onOpenGraph, onOpenAdmin, onOpenSettings }: Props) {
   const toggleSidebar = useSidebarStore((s) => s.toggleSidebar);
   const hasMessages = useChatStore((s) => s.messages.length > 0);
   const { meta } = useAnnouncements();
@@ -49,6 +51,16 @@ export function Header({ onOpenGraph }: Props) {
           <Button variant="pill" leadingIcon={<Icon.Graph />} onClick={onOpenGraph}>
             지식 그래프
           </Button>
+        )}
+        {onOpenAdmin && (
+          <IconButton aria-label="데이터 수집 모니터링" onClick={onOpenAdmin}>
+            <Icon.Refresh />
+          </IconButton>
+        )}
+        {onOpenSettings && (
+          <IconButton aria-label="설정" onClick={onOpenSettings}>
+            <Icon.Settings />
+          </IconButton>
         )}
         <Button variant="pill" leadingIcon={<Icon.Share />}>공유</Button>
       </div>

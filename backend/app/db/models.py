@@ -19,5 +19,7 @@ class Message(SQLModel, table=True):
     sources_json: Optional[str] = None
     graph_json: Optional[str] = None
     followups_json: Optional[str] = None
+    # 디버그 정보 — Vector/Graph raw 결과 + LLM 컨텍스트 (검색 과정 확인 패널용)
+    retrieval_json: Optional[str] = None
     is_error: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)

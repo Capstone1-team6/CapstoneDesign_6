@@ -23,6 +23,10 @@ export const ENDPOINTS = {
   crawl:       '/api/crawl',
   /** GET — 크롤러 진행 상태 */
   crawlStatus: '/api/crawl/status',
+  /** GET — 대시보드 통계 */
+  stats:       '/api/stats',
+  /** GET — 최근 크롤 로그 (ring buffer) */
+  crawlLogs:   '/api/crawl/logs',
 } as const;
 
 /** VITE_USE_MOCK=true 로 명시해야만 mock 모드 활성화 */

@@ -136,8 +136,36 @@ def run_hybrid_rag(query: str) -> dict[str, Any]:
         query=query,
     )
 
+    # 검색 과정 디버그용 — Vector 결과 + Graph relations + LLM 컨텍스트
+    vector_items = [
+        {
+            "chunkId": d.get("chunk_id", "") or "",
+            "source": d.get("source", "") or "",
+            "score": d.get("score"),
+            "preview": (d.get("content", "") or "")[:300],
+        }
+        for d in raw_docs
+    ]
+    graph_items = [
+        {
+            "from": (rel.get("from") or "").strip(),
+            "relation": (rel.get("relation") or "").strip(),
+            "to": (rel.get("to") or "").strip(),
+        }
+        for rel in (result.get("graph_relations") or [])
+        if rel.get("from") and rel.get("to")
+    ]
+    context = result.get("context") or ""
+    retrieval = {
+        "vector": vector_items,
+        "graph": graph_items,
+        "context": context[:8000],   # 너무 길면 잘라서 송신 (디버그용)
+        "contextLength": len(context),
+    }
+
     return {
         "answer": result.get("answer", "") or "",
         "sources": sources,
         "knowledge_graph": knowledge_graph,  # None 가능
+        "retrieval": retrieval,
     }

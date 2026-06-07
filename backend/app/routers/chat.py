@@ -48,19 +48,23 @@ async def chat(req: ChatRequest):
             answer = result["answer"]
             sources = result["sources"]
             knowledge_graph = result.get("knowledge_graph")
+            retrieval = result.get("retrieval")
 
             with DBSession(engine) as db2:
                 session_svc.add_message(
                     db2, session_id, role="assistant",
                     content=answer, sources=sources, graph_data=knowledge_graph,
+                    retrieval=retrieval,
                 )
 
             # text 를 먼저 보내 프론트가 assistant 버블을 생성하게 한 뒤
-            # sources/graph 로 메시지 메타를 보강. (프론트 routeChunk 가 첫 'text'에서만 버블 생성)
+            # sources/graph/retrieval 로 메시지 메타를 보강. (프론트 routeChunk 가 첫 'text'에서만 버블 생성)
             yield _sse({"type": "text", "content": answer})
             yield _sse({"type": "sources", "sources": sources})
             if knowledge_graph is not None:
                 yield _sse({"type": "graph", "graphData": knowledge_graph})
+            if retrieval is not None:
+                yield _sse({"type": "retrieval", "retrieval": retrieval})
             yield _sse({"type": "done"})
         except Exception as e:
             err = f"{type(e).__name__}: {e}"

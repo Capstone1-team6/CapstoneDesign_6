@@ -5,19 +5,24 @@
 import { useState } from 'react';
 import { ChatPage } from '@/pages/chat';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
+import { DashboardPage } from '@/pages/admin';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 
-type View = 'chat' | 'settings';
+type View = 'chat' | 'settings' | 'admin';
 
 export function App() {
   const [view, setView] = useState<View>('chat');
+  const goChat = () => setView('chat');
   return (
     <ErrorBoundary>
-      {view === 'chat' ? (
-        <ChatPage onOpenSettings={() => setView('settings')} />
-      ) : (
-        <SettingsPage onClose={() => setView('chat')} />
+      {view === 'chat' && (
+        <ChatPage
+          onOpenSettings={() => setView('settings')}
+          onOpenAdmin={() => setView('admin')}
+        />
       )}
+      {view === 'settings' && <SettingsPage onClose={goChat} />}
+      {view === 'admin' && <DashboardPage onClose={goChat} />}
     </ErrorBoundary>
   );
 }

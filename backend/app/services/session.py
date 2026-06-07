@@ -35,6 +35,7 @@ def add_message(
     sources: Optional[list[dict]] = None,
     graph_data: Optional[dict] = None,
     followups: Optional[list[str]] = None,
+    retrieval: Optional[dict] = None,
     is_error: bool = False,
 ) -> Message:
     msg = Message(
@@ -45,6 +46,7 @@ def add_message(
         sources_json=json.dumps(sources, ensure_ascii=False) if sources else None,
         graph_json=json.dumps(graph_data, ensure_ascii=False) if graph_data else None,
         followups_json=json.dumps(followups, ensure_ascii=False) if followups else None,
+        retrieval_json=json.dumps(retrieval, ensure_ascii=False) if retrieval else None,
         is_error=is_error,
     )
     db.add(msg)
@@ -91,6 +93,7 @@ def get_session_messages(db: DBSession, session_id: str) -> Optional[list[dict]]
             "sources": json.loads(m.sources_json) if m.sources_json else None,
             "graphData": json.loads(m.graph_json) if m.graph_json else None,
             "followups": json.loads(m.followups_json) if m.followups_json else None,
+            "retrieval": json.loads(m.retrieval_json) if m.retrieval_json else None,
             "createdAt": m.created_at.isoformat(),
             "isError": m.is_error,
         }

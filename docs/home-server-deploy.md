@@ -94,14 +94,19 @@ docker compose -f docker-compose.prod.yml up -d --build
 ## 5. Rebuild Search Stores
 
 Run these only when source documents changed and you want the search index refreshed.
+The vector and graph commands are incremental by default. Add `--rebuild` to
+`03_graph_db.py` only when you intentionally want to clear and rebuild Neo4j.
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm backend python pipeline/01_parser.py
 docker compose -f docker-compose.prod.yml run --rm backend python pipeline/02_vector_db.py
-docker compose -f docker-compose.prod.yml run --rm backend python pipeline/03_graph_db.py --rebuild
+docker compose -f docker-compose.prod.yml run --rm backend python pipeline/03_graph_db.py
 ```
 
-The Settings page sync button runs the full pipeline: crawl, download, parse, vector rebuild, graph update, and RAG cache reload.
+The Settings page sync button runs the full pipeline: crawl, download, parse,
+incremental vector update, incremental graph update, and RAG cache reload.
+The crawl range is the latest N notice-list pages. The UI defaults to 3 pages,
+and the server caps the accepted value with `MAX_SYNC_PAGES`.
 
 Manual/evaluation documents are excluded from the web index by default. Set
 `INCLUDE_MANUAL_FILES=true` only when running local evaluation experiments.

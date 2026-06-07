@@ -30,6 +30,7 @@ def _ensure_message_columns() -> None:
     columns = {
         "graph_json": "TEXT",
         "followups_json": "TEXT",
+        "retrieval_json": "TEXT",
     }
     missing = [(name, ddl_type) for name, ddl_type in columns.items() if name not in existing]
     if not missing:

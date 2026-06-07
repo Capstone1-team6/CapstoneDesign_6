@@ -1,4 +1,4 @@
-import requests
+﻿import requests
 from bs4 import BeautifulSoup
 import json
 import os
@@ -13,12 +13,57 @@ HEADERS = {
 
 OUTPUT_DIR = "./data/raw"
 ATTACHMENT_DIR = "./data/attachments"
+NOTICES_PATH = os.path.join(OUTPUT_DIR, "notices.json")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(ATTACHMENT_DIR, exist_ok=True)
 
 # 세션 유지: 그누보드는 다운로드 시 세션 쿠키를 검증함
 session = requests.Session()
 session.headers.update(HEADERS)
+
+
+def notice_id(notice):
+    wr_id = str(notice.get("wr_id") or "").strip()
+    if wr_id:
+        return wr_id
+    url = notice.get("url", "")
+    try:
+        return url.split("wr_id=")[1].split("&")[0]
+    except IndexError:
+        return ""
+
+
+def load_existing_notices():
+    if not os.path.exists(NOTICES_PATH):
+        return []
+    try:
+        with open(NOTICES_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        print(f"[warning] failed to load existing notices.json: {e}")
+        return []
+
+
+def merge_notices(new_notices, existing_notices):
+    merged = {}
+    order = []
+
+    for notice in new_notices:
+        key = notice_id(notice)
+        if not key:
+            continue
+        merged[key] = notice
+        order.append(key)
+
+    for notice in existing_notices:
+        key = notice_id(notice)
+        if not key or key in merged:
+            continue
+        merged[key] = notice
+        order.append(key)
+
+    return [merged[key] for key in order]
 
 
 def get_notice_list(page=1):
@@ -114,45 +159,59 @@ def get_notice_detail(url):
 
 
 def crawl(max_pages=3):
-    """전체 크롤링 실행"""
+    """Crawl list pages and merge them into the existing notices.json."""
     all_notices = []
-    print(f"[시작] 경북대 컴퓨터학부 공지사항 크롤링 (최대 {max_pages}페이지)")
+    existing_notices = load_existing_notices()
+    existing_by_id = {notice_id(n): n for n in existing_notices if notice_id(n)}
+
+    print(f"[start] crawl notices (max_pages={max_pages})")
+    if existing_by_id:
+        print(f"[existing] loaded {len(existing_by_id)} notices")
 
     for page in range(1, max_pages + 1):
-        print(f"\n[페이지 {page}] 목록 수집 중...")
+        print(f"\n[page {page}] collect list")
         html = get_notice_list(page)
 
         if html is None:
-            print("[중단] 요청 실패")
+            print("[stop] request failed")
             break
 
         notices = parse_notice_list(html)
 
         if not notices:
-            print(f"[페이지 {page}] 파싱 실패")
+            print(f"[page {page}] parse failed")
             with open(f"debug_page{page}.html", "w", encoding="utf-8") as f:
                 f.write(html)
-            print(f"  debug_page{page}.html 저장됨")
+            print(f"  debug_page{page}.html saved")
             break
 
-        print(f"[페이지 {page}] {len(notices)}개 발견")
+        print(f"[page {page}] found {len(notices)} notices")
 
         for i, notice in enumerate(notices):
-            print(f"  [{i+1}/{len(notices)}] {notice['title'][:40]}")
-            detail = get_notice_detail(notice["url"])
-            if detail:
-                notice.update(detail)
+            key = notice_id(notice)
+            if key in existing_by_id:
+                print(f"  [{i+1}/{len(notices)}] cached: {notice['title'][:40]}")
+                notice = {**existing_by_id[key], **notice}
+            else:
+                print(f"  [{i+1}/{len(notices)}] new: {notice['title'][:40]}")
+                detail = get_notice_detail(notice["url"])
+                if detail:
+                    notice.update(detail)
             all_notices.append(notice)
             time.sleep(0.5)
 
     if all_notices:
-        output_path = os.path.join(OUTPUT_DIR, "notices.json")
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(all_notices, f, ensure_ascii=False, indent=2)
-        print(f"\n[완료] {len(all_notices)}개 저장 → {output_path}")
+        merged_notices = merge_notices(all_notices, existing_notices)
+        with open(NOTICES_PATH, "w", encoding="utf-8") as f:
+            json.dump(merged_notices, f, ensure_ascii=False, indent=2)
+        new_count = sum(1 for n in all_notices if notice_id(n) not in existing_by_id)
+        print(
+            f"\n[done] crawled={len(all_notices)} new={new_count} "
+            f"total={len(merged_notices)} saved={NOTICES_PATH}"
+        )
+        return merged_notices
 
-    return all_notices
-
+    return existing_notices
 
 def download_attachments(notices):
     """수집된 공지사항의 첨부파일 전체 다운로드"""
@@ -254,3 +313,4 @@ if __name__ == "__main__":
 
     # 2. 첨부파일 다운로드
     download_attachments(notices)
+

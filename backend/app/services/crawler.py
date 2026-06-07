@@ -1,4 +1,4 @@
-"""Full data sync service.
+﻿"""Full data sync service.
 
 The public API is still named "crawl" for frontend compatibility, but the
 operation now reflects new data into search: crawl, download attachments, parse,
@@ -204,3 +204,4 @@ def run_full_sync(max_pages: int = 3) -> None:
             finished_at=_now(),
         )
         raise
+

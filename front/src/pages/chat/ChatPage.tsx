@@ -23,7 +23,7 @@ interface Props {
 export function ChatPage({ onOpenSettings }: Props) {
   const messages = useChatStore((s) => s.messages);
   const { send, abort, retryLast, isStreaming } = useChat();
-  const { addBookmark, removeBookmark } = useSidebarStore();
+  const { addBookmark, removeBookmark, isOpen: isSidebarOpen, toggleSidebar } = useSidebarStore();
   const sessionId = useChatStore((s) => s.sessionId);
 
   const [previewSource, setPreviewSource] = useState<AnnouncementSource | null>(null);
@@ -61,6 +61,12 @@ export function ChatPage({ onOpenSettings }: Props) {
                'radial-gradient(ellipse 800px 400px at 80% 10%, rgba(91, 174, 220, 0.08), transparent 60%),' +
                'radial-gradient(ellipse 600px 500px at 15% 95%, rgba(37, 99, 235, 0.05), transparent 60%)',
            }} />
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-[49] bg-ink/40 backdrop-blur-sm sm:hidden"
+          onClick={toggleSidebar}
+        />
+      )}
       <Sidebar onOpenSettings={onOpenSettings} />
       <main className="relative z-[1] flex min-w-0 flex-1 flex-col">
         <Header onOpenGraph={handleOpenTopicGraph} />

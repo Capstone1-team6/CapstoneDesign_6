@@ -33,7 +33,7 @@ export function SettingsPage({ onClose }: Props) {
         <h1 className="m-0 text-[18px] font-semibold tracking-tight">설정</h1>
       </div>
 
-      <div className="mx-auto w-full max-w-[720px] flex-1 overflow-y-auto px-8 pb-12 pt-8">
+      <div className="mx-auto w-full max-w-[720px] flex-1 overflow-y-auto px-4 pb-12 pt-8 sm:px-8">
         <SettingsGroup label="계정">
           <SettingsRow
             title="경북대 재학생"

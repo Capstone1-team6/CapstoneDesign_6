@@ -24,10 +24,15 @@ export function Sidebar({ onOpenSettings }: Props) {
   return (
     <aside
       className={cn(
-        'relative z-[1] flex w-[280px] flex-shrink-0 flex-col',
-        'border-r border-line bg-white',
-        'transition-[margin] duration-200',
-        !isOpen && '-ml-[280px] opacity-0',
+        'flex w-[280px] flex-col border-r border-line bg-white',
+        // Mobile: fixed overlay so it doesn't push the chat area off-screen
+        'fixed inset-y-0 left-0 z-[50]',
+        'transition-[transform,opacity] duration-200',
+        // Desktop (≥640px): back to in-flow flex sibling
+        'sm:relative sm:z-[1] sm:flex-shrink-0',
+        'sm:transition-[margin,opacity]',
+        // Closed: translate off on mobile, margin-shift on desktop
+        !isOpen && '-translate-x-full opacity-0 sm:translate-x-0 sm:-ml-[280px]',
       )}
     >
       {/* Brand */}

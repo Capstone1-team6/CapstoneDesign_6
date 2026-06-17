@@ -12,7 +12,7 @@ interface Props {
 
 export function RAGPipeline({ stepIdx }: Props) {
   return (
-    <div className="flex min-w-[360px] flex-col gap-2.5 rounded-cd-lg
+    <div className="flex w-full min-w-0 flex-col gap-2.5 rounded-cd-lg
                     rounded-bl-md border border-line bg-surface px-4 py-3.5">
       {RAG_STEPS.map((s, i) => {
         const state: 'done' | 'active' | 'pending' =

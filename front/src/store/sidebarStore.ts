@@ -34,7 +34,7 @@ interface SidebarActions {
 export const useSidebarStore = create<SidebarState & SidebarActions>()(
   persist(
     (set, get) => ({
-      isOpen: true,
+      isOpen: typeof window !== 'undefined' ? window.innerWidth >= 640 : true,
       activeTab: 'chat',
       selectedSessionId: null,
       chatSessions: [],

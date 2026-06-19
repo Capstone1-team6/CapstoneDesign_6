@@ -66,7 +66,7 @@ export function ChatPage({ onOpenSettings, onOpenAdmin }: Props) {
   const isWelcome = messages.length === 0;
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden bg-canvas font-sans text-ink">
+    <div className="relative flex h-[100dvh] w-screen overflow-hidden bg-canvas font-sans text-ink">
       <div className="pointer-events-none absolute inset-0 z-0"
            style={{
              backgroundImage:

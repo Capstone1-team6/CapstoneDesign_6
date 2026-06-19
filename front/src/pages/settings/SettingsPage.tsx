@@ -59,7 +59,7 @@ export function SettingsPage({ onClose }: Props) {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-canvas font-sans text-ink">
+    <div className="flex h-[100dvh] flex-col bg-canvas font-sans text-ink">
       <div className="flex flex-shrink-0 items-center gap-3 border-b border-line bg-white/70
                       px-6 py-3.5 backdrop-blur-md">
         <IconButton aria-label="뒤로가기" onClick={onClose}>

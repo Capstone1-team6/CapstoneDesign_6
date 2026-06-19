@@ -105,7 +105,7 @@ export function MessageBubble({
             {!msg.streaming && !msg.isError && (
               <div className="flex items-center gap-1 group">
                 <span className="text-[11px] text-ink-4 px-1">{msg.createdAt}</span>
-                <div className="opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                   <IconButton aria-label="복사" size="sm" onClick={handleCopy}>
                     {copied ? <Icon.Check /> : <Icon.Copy />}
                   </IconButton>

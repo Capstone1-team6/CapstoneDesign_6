@@ -15,8 +15,10 @@ interface Props {
 }
 
 export function Sidebar({ onOpenSettings }: Props) {
-  const { isOpen, activeTab, setActiveTab, bookmarks, selectedSessionId } = useSidebarStore();
+  const { isOpen, activeTab, setActiveTab, bookmarks, selectedSessionId, setSidebarOpen } = useSidebarStore();
   const { resetChat } = useChatStore();
+
+  const closeMobile = () => { if (window.innerWidth < 640) setSidebarOpen(false); };
   const { sessions, openSession, deleteSession } = useChatHistory();
 
   const grouped = useMemo(() => groupByDate(sessions), [sessions]);
@@ -24,11 +26,18 @@ export function Sidebar({ onOpenSettings }: Props) {
   return (
     <aside
       className={cn(
-        'relative z-[1] flex w-[280px] flex-shrink-0 flex-col',
-        'border-r border-line bg-white',
-        'transition-[margin] duration-200',
-        !isOpen && '-ml-[280px] opacity-0',
+        'flex w-[280px] flex-col border-r border-line bg-white',
+        // Mobile: fixed overlay so it doesn't push the chat area off-screen
+        'fixed inset-y-0 left-0 z-[50]',
+        'transition-[transform,opacity] duration-200',
+        // Desktop (≥640px): back to in-flow flex sibling
+        'sm:relative sm:z-[1] sm:flex-shrink-0',
+        'sm:transition-[margin,opacity]',
+        // Closed: translate off on mobile, margin-shift on desktop
+        !isOpen && '-translate-x-full opacity-0 sm:translate-x-0 sm:-ml-[280px]',
       )}
+      aria-hidden={!isOpen || undefined}
+      {...(!isOpen ? { inert: '' } : {})}
     >
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
@@ -45,7 +54,7 @@ export function Sidebar({ onOpenSettings }: Props) {
       <div className="px-3 pb-1 pt-2">
         <button
           type="button"
-          onClick={resetChat}
+          onClick={() => { resetChat(); closeMobile(); }}
           className="flex w-full items-center gap-2.5 rounded-cd-md bg-brand-grad
                      px-3.5 py-2.5 text-left text-[13.5px] font-semibold text-white
                      shadow-brand-glow transition-transform hover:-translate-y-px"
@@ -89,7 +98,7 @@ export function Sidebar({ onOpenSettings }: Props) {
                 {items.map((s) => (
                   <button
                     key={s.id}
-                    onClick={() => openSession(s.id)}
+                    onClick={() => { void openSession(s.id); closeMobile(); }}
                     className={cn(
                       'group flex w-full items-center gap-2.5 rounded-cd-sm px-3 py-2.5',
                       'text-left text-[13px] transition-colors',
@@ -106,8 +115,8 @@ export function Sidebar({ onOpenSettings }: Props) {
                     <span
                       onClick={(e) => { e.stopPropagation(); void deleteSession(s.id); }}
                       role="button" aria-label="대화 삭제"
-                      className="hidden cursor-pointer rounded p-1 text-ink-4 hover:bg-red-100
-                                 hover:text-red-500 group-hover:block"
+                      className="flex cursor-pointer rounded p-1 text-ink-4 hover:bg-red-100
+                                 hover:text-red-500 sm:hidden sm:group-hover:flex"
                     >
                       <Icon.Trash />
                     </span>

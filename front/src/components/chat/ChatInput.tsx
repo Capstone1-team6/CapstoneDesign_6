@@ -42,7 +42,7 @@ export function ChatInput({ isStreaming, onSend, onAbort }: Props) {
   const disabled = isEmptyInput(value);
 
   return (
-    <div className="mx-auto w-full max-w-[820px] px-6 pb-5 pt-3.5">
+    <div className="mx-auto w-full max-w-[820px] px-4 pb-5 pt-3.5 sm:px-6">
       <div className="flex items-end gap-2.5 rounded-[18px] border-[1.5px] border-line
                       bg-surface py-2.5 pl-4 pr-2.5 transition-all
                       focus-within:border-brand-300

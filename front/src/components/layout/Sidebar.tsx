@@ -36,6 +36,8 @@ export function Sidebar({ onOpenSettings }: Props) {
         // Closed: translate off on mobile, margin-shift on desktop
         !isOpen && '-translate-x-full opacity-0 sm:translate-x-0 sm:-ml-[280px]',
       )}
+      aria-hidden={!isOpen || undefined}
+      {...(!isOpen ? { inert: '' } : {})}
     >
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">

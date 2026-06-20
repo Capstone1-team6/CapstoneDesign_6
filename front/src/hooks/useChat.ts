@@ -1,6 +1,4 @@
-// hooks/useChat.ts
 // 메시지 전송 + 스트리밍 청크 라우팅 + 중단(abort).
-// (PRD F-CHAT-02 / F-CHAT-05 / F-INPUT-04 / F-UX-04)
 
 import { useCallback, useRef } from 'react';
 import { useChatStore } from '@/store/chatStore';
@@ -46,7 +44,6 @@ export function useChat() {
         isLoading: true,
       });
 
-      // AbortController 등록
       const ctrl = new AbortController();
       setAbortController(ctrl);
       setStreaming(true);
@@ -61,8 +58,6 @@ export function useChat() {
           sessionId: useChatStore.getState().sessionId,
           message: normalized,
           signal: ctrl.signal,
-          // mock 라우터에 추천 카드 ID 힌트를 전달하려면 클로저로 외부 변수 캡쳐
-          // (실 서버에서는 무시)
           // @ts-expect-error — questionId는 mock 전용 비표준 필드
           questionId,
           onChunk: (chunk: StreamChunk) => routeChunk(chunk),
@@ -70,7 +65,6 @@ export function useChat() {
       } catch (err) {
         const isAbort = (err as Error)?.name === 'AbortError';
         if (!isAbort) {
-          // 인라인 에러 메시지 — F-UX-03
           updateMessage(assistantBornYet ? assistantId : loadingId, {
             isLoading: false,
             streaming: false,
@@ -95,7 +89,6 @@ export function useChat() {
           }
           case 'text': {
             if (!assistantBornYet) {
-              // 첫 토큰 — 로딩 버블을 실제 답변 버블로 전환
               removeMessage(loadingId);
               addMessage({
                 id: assistantId,
@@ -145,11 +138,27 @@ export function useChat() {
 
   const abort = useCallback(() => {
     abortController?.abort();
+
+    const messages = useChatStore.getState().messages;
+    const pending = [...messages].reverse().find((m) => m.isLoading || m.streaming);
+    if (pending) {
+      if (pending.isLoading && !pending.content) {
+        updateMessage(pending.id, {
+          isLoading: false,
+          streaming: false,
+          isStopped: true,
+          content: '답변 생성이 중지되었습니다.',
+          createdAt: formatMessageTime(),
+        });
+      } else {
+        updateMessage(pending.id, { isLoading: false, streaming: false });
+      }
+    }
+
     setStreaming(false);
     setRagStep(0);
-  }, [abortController, setStreaming, setRagStep]);
+  }, [abortController, removeMessage, updateMessage, setStreaming, setRagStep]);
 
-  /** 마지막 사용자 메시지를 다시 전송 — 에러 재시도용 (F-UX-04) */
   const retryLast = useCallback(() => {
     const last = useChatStore.getState().lastUserMessage;
     if (last) void send(last);

@@ -1,7 +1,3 @@
-// components/common/Icon.tsx
-// 청담 — 사용처별 인라인 SVG 아이콘 세트.
-// Lucide 스타일(1.5px stroke, round caps) — 패키지 의존 없이 직접 그림.
-
 import type { SVGProps } from 'react';
 
 type Props = SVGProps<SVGSVGElement>;
@@ -40,6 +36,7 @@ export const Icon = {
   Stop:       filled(<rect x={6} y={6} width={12} height={12} rx={2} />),
   Search:     stroke(<><circle cx={11} cy={11} r={8} /><path d="m21 21-4.3-4.3" /></>),
   Menu:       stroke(<path d="M3 12h18M3 6h18M3 18h18" />),
+  Sidebar:    stroke(<><rect x={3} y={3} width={18} height={18} rx={2} /><path d="M9 3v18" /></>),
   Settings:   stroke(<><circle cx={12} cy={12} r={3} /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>),
   Chat:       stroke(<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />),
   Bookmark:   stroke(<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />),

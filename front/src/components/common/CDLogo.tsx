@@ -7,13 +7,13 @@ import { cn } from '@/utils/cn';
 export type LogoVariant = 'drop-ripple' | 'star-drop' | 'cheong';
 
 interface Props {
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'header' | 'md' | 'lg';
   variant?: LogoVariant;
   animated?: boolean;
   className?: string;
 }
 
-const SIZE_CLASS = { sm: 'w-8 h-8', md: 'w-12 h-12', lg: 'w-24 h-24' };
+const SIZE_CLASS = { sm: 'w-8 h-8', header: 'w-10 h-10', md: 'w-12 h-12', lg: 'w-24 h-24' };
 
 export function CDLogo({
   size = 'md', variant = 'drop-ripple', animated = true, className,

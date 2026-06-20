@@ -11,8 +11,9 @@ interface Props {
 
 export function WelcomeScreen({ onPick }: Props) {
   return (
-    <div className="mx-auto flex w-full max-w-[820px] flex-1 flex-col items-center
-                    justify-center px-6 pb-6 pt-10 text-center">
+    <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-[820px] min-h-full flex-col items-center
+                      justify-center px-6 pb-6 pt-10 text-center">
       <div className="mb-5"><CDLogo size="lg" /></div>
       <h1 className="m-0 mb-2.5 text-[32px] font-bold leading-tight tracking-tight text-ink">
         무엇이 궁금하세요?
@@ -46,6 +47,7 @@ export function WelcomeScreen({ onPick }: Props) {
             </button>
           );
         })}
+      </div>
       </div>
     </div>
   );

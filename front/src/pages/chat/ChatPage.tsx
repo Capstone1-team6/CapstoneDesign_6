@@ -1,8 +1,4 @@
-// pages/chat/ChatPage.tsx
-// 메인 챗봇 화면 — Welcome / MessageList / Composer + 모달 레이어.
-// UI 조립만 담당 (PRD 규칙). 상태는 store, 로직은 hooks 에서.
-
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { WelcomeScreen } from '@/components/chat/WelcomeScreen';
@@ -48,16 +44,6 @@ export function ChatPage({ onOpenSettings, onOpenAdmin }: Props) {
     return () => window.removeEventListener('cd:bookmark', handler);
   }, [addBookmark, removeBookmark, sessionId]);
 
-  const handleOpenTopicGraph = useCallback(() => {
-    // 최신 답변 메시지의 graphData(백엔드 동적) 또는 graphKey(legacy/mock).
-    // 둘 다 없으면 'general' 더미 표시.
-    const lastWithGraph = [...messages].reverse().find(
-      (m) => m.graphData || m.graphKey,
-    );
-    setGraphData(lastWithGraph?.graphData ?? null);
-    setGraphKey(lastWithGraph?.graphData ? null : lastWithGraph?.graphKey ?? 'general');
-  }, [messages]);
-
   const closeGraphModal = () => {
     setGraphKey(null);
     setGraphData(null);
@@ -70,7 +56,7 @@ export function ChatPage({ onOpenSettings, onOpenAdmin }: Props) {
       <div className="pointer-events-none absolute inset-0 z-0"
            style={{
              backgroundImage:
-               'radial-gradient(ellipse 800px 400px at 80% 10%, rgba(91, 174, 220, 0.08), transparent 60%),' +
+               'radial-gradient(ellipse 800px 400px at 80% 25%, rgba(91, 174, 220, 0), transparent 60%),' +
                'radial-gradient(ellipse 600px 500px at 15% 95%, rgba(37, 99, 235, 0.05), transparent 60%)',
            }} />
       {isSidebarOpen && (
@@ -80,12 +66,8 @@ export function ChatPage({ onOpenSettings, onOpenAdmin }: Props) {
         />
       )}
       <Sidebar onOpenSettings={onOpenSettings} />
-      <main className="relative z-[1] flex min-w-0 flex-1 flex-col">
-        <Header
-          onOpenGraph={handleOpenTopicGraph}
-          onOpenAdmin={onOpenAdmin}
-          onOpenSettings={onOpenSettings}
-        />
+      <main className="relative z-[1] flex min-w-0 min-h-0 flex-1 flex-col">
+        <Header onOpenAdmin={onOpenAdmin} />
         {isWelcome ? (
           <WelcomeScreen onPick={(q) => void send(q.title, q.id)} />
         ) : (

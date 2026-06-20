@@ -1,8 +1,7 @@
-// 대화 히스토리 + 보관함 사이드바.
-
 import { useMemo } from 'react';
 import { CDLogo } from '@/components/common/CDLogo';
 import { Icon } from '@/components/common/Icon';
+import { IconButton } from '@/components/common/IconButton';
 import { useSidebarStore } from '@/store/sidebarStore';
 import { useChatStore } from '@/store/chatStore';
 import { useChatHistory } from '@/hooks/useChatHistory';
@@ -14,7 +13,9 @@ interface Props {
 }
 
 export function Sidebar({ onOpenSettings }: Props) {
-  const { isOpen, activeTab, setActiveTab, bookmarks, selectedSessionId, setSidebarOpen } = useSidebarStore();
+  const {
+    isOpen, activeTab, setActiveTab, bookmarks, selectedSessionId, setSidebarOpen,
+  } = useSidebarStore();
   const resetChat = useChatStore((s) => s.resetChat);
 
   const closeMobile = () => { if (window.innerWidth < 640) setSidebarOpen(false); };
@@ -26,13 +27,10 @@ export function Sidebar({ onOpenSettings }: Props) {
     <aside
       className={cn(
         'flex w-[280px] flex-col border-r border-line bg-white',
-        // Mobile: fixed overlay so it doesn't push the chat area off-screen
         'fixed inset-y-0 left-0 z-[50]',
         'transition-[transform,opacity] duration-200',
-        // Desktop (≥640px): back to in-flow flex sibling
         'sm:relative sm:z-[1] sm:flex-shrink-0',
         'sm:transition-[margin,opacity]',
-        // Closed: translate off on mobile, margin-shift on desktop
         !isOpen && '-translate-x-full opacity-0 sm:translate-x-0 sm:-ml-[280px]',
       )}
       aria-hidden={!isOpen || undefined}
@@ -43,12 +41,15 @@ export function Sidebar({ onOpenSettings }: Props) {
         <button onClick={resetChat} aria-label="메인 화면으로 이동" className="cursor-pointer">
           <CDLogo size="sm" />
         </button>
-        <div className="flex flex-col leading-tight">
+        <div className="flex flex-1 flex-col leading-tight">
           <span className="text-[17px] font-bold text-ink">
             청담<span className="ml-1.5 text-[11px] font-medium text-ink-4 tracking-wide">淸潭</span>
           </span>
           <span className="mt-0.5 text-[11px] text-ink-3">경북대 공지 어시스턴트</span>
         </div>
+        <IconButton aria-label="사이드바 닫기" onClick={() => setSidebarOpen(false)}>
+          <Icon.Sidebar />
+        </IconButton>
       </div>
 
       {/* New chat */}
@@ -57,8 +58,8 @@ export function Sidebar({ onOpenSettings }: Props) {
           type="button"
           onClick={() => { resetChat(); closeMobile(); }}
           className="flex w-full items-center gap-2.5 rounded-cd-md bg-brand-grad
-                     px-3.5 py-2.5 text-left text-[13.5px] font-semibold text-white
-                     shadow-brand-glow transition-transform hover:-translate-y-px"
+                      px-3.5 py-2.5 text-left text-[13.5px] font-semibold text-white
+                      shadow-brand-glow transition-transform hover:-translate-y-px"
         >
           <Icon.Plus />
           <span>새로운 채팅</span>
@@ -117,7 +118,7 @@ export function Sidebar({ onOpenSettings }: Props) {
                       onClick={(e) => { e.stopPropagation(); void deleteSession(s.id); }}
                       role="button" aria-label="대화 삭제"
                       className="flex cursor-pointer rounded p-1 text-ink-4 hover:bg-red-100
-                                 hover:text-red-500 sm:hidden sm:group-hover:flex"
+                                  hover:text-red-500 sm:hidden sm:group-hover:flex"
                     >
                       <Icon.Trash />
                     </span>

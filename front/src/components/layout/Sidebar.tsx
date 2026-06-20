@@ -38,7 +38,7 @@ export function Sidebar({ onOpenSettings }: Props) {
     >
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-        <button onClick={resetChat} aria-label="메인 화면으로 이동" className="cursor-pointer">
+        <button onClick={() => { resetChat(); closeMobile(); }} aria-label="메인 화면으로 이동" className="cursor-pointer">
           <CDLogo size="sm" />
         </button>
         <div className="flex flex-1 flex-col leading-tight">

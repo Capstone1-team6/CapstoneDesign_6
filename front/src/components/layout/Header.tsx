@@ -5,6 +5,7 @@ import { IconButton } from '@/components/common/IconButton';
 import { Button } from '@/components/common/Button';
 import { Icon } from '@/components/common/Icon';
 import { CDLogo } from '@/components/common/CDLogo';
+import { Toast } from '@/components/common/Toast';
 import { useSidebarStore } from '@/store/sidebarStore';
 import { useChatStore } from '@/store/chatStore';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
@@ -21,13 +22,12 @@ export function Header({ onOpenGraph, onOpenAdmin, onOpenSettings }: Props) {
   const hasMessages = useChatStore((s) => s.messages.length > 0);
   const resetChat = useChatStore((s) => s.resetChat);
   const { meta } = useAnnouncements();
-  const [copied, setCopied] = useState(false);
+  const [showToast, setShowToast] = useState(false);
 
   const handleShare = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setShowToast(true);
     } catch {
       /* noop */
     }
@@ -77,9 +77,15 @@ export function Header({ onOpenGraph, onOpenAdmin, onOpenSettings }: Props) {
           </IconButton>
         )}
         <Button variant="pill" leadingIcon={<Icon.Share />} onClick={handleShare}>
-          {copied ? '복사됨' : '공유'}
+          공유
         </Button>
       </div>
+
+      <Toast
+        message="링크가 복사되었습니다"
+        show={showToast}
+        onHide={() => setShowToast(false)}
+      />
     </header>
   );
 }

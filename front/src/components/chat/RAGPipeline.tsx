@@ -44,10 +44,8 @@ export function RAGPipeline({ stepIdx }: Props) {
                 <span className="block h-1.5 w-1.5 rounded-full bg-current" />
               )}
             </span>
+            <span className="text-ink-4">···</span>
             <span className="flex-1">{s.label}</span>
-            <span className="rounded bg-canvas px-1.5 py-0.5 font-mono text-[11px] text-ink-4">
-              {s.tag}
-            </span>
           </div>
         );
       })}

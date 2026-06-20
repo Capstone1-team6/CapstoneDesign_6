@@ -84,6 +84,7 @@ export function MessageBubble({
                 'text-[14.5px] leading-relaxed text-ink',
                 'prose prose-sm max-w-none prose-strong:font-semibold',
                 msg.isError && 'border-red-200 bg-red-50/60 text-red-900',
+                msg.isStopped && 'border-line-2 bg-canvas text-ink-3 italic',
               )}
             >
               <Markdown>{msg.content || ' '}</Markdown>
@@ -102,7 +103,7 @@ export function MessageBubble({
               </button>
             )}
 
-            {!msg.streaming && !msg.isError && (
+            {!msg.streaming && !msg.isError && !msg.isStopped && (
               <div className="flex items-center gap-1 group">
                 <span className="text-[11px] text-ink-4 px-1">{msg.createdAt}</span>
                 <div className="transition-opacity sm:opacity-0 sm:group-hover:opacity-100">

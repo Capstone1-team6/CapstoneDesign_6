@@ -22,6 +22,8 @@ export interface Message {
   retrieval?: RetrievalDebug;
   createdAt: string;
   isError?: boolean;
+  /** UI-only 플래그 — 답변 생성 전(텍스트 0자) 상태에서 사용자가 중지함 */
+  isStopped?: boolean;
   isBookmarked?: boolean;
   /** UI-only 플래그 — 스트리밍 중 */
   streaming?: boolean;

@@ -17,13 +17,16 @@ export function Header({ onOpenAdmin }: Props) {
   const setSidebarOpen = useSidebarStore((s) => s.setSidebarOpen);
   const { meta } = useAnnouncements();
   const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('링크가 복사되었습니다');
 
   const handleShare = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
+      setToastMessage('링크가 복사되었습니다');
       setShowToast(true);
     } catch {
-      /* noop */
+      setToastMessage('링크 복사에 실패했습니다');
+      setShowToast(true);
     }
   };
 
@@ -76,7 +79,7 @@ export function Header({ onOpenAdmin }: Props) {
       </div>
 
       <Toast
-        message="링크가 복사되었습니다"
+        message={toastMessage}
         show={showToast}
         onHide={() => setShowToast(false)}
       />

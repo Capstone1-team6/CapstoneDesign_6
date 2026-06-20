@@ -19,9 +19,9 @@ export function Toast({ message, show, onHide, duration = 2000 }: Props) {
     <div
       role="status"
       aria-live="polite"
-      className={`pointer-events-none fixed bottom-3 left-1/2 z-[60] -translate-x-1/2
+      className={`pointer-events-none fixed top-4 left-1/2 z-[60] -translate-x-1/2
                  transition-all duration-300
-                 ${show ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}`}
+                 ${show ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'}`}
     >
       <div className="flex items-center gap-2 rounded-full bg-brand-grad px-4 py-2.5
                       text-[13px] font-medium text-white shadow-brand-glow">

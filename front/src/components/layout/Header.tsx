@@ -1,6 +1,6 @@
-// components/layout/Header.tsx
 // 상단바 — 사이드바 토글, 로고+타이틀, 마지막 동기화, 지식 그래프, 공유
 
+import { useState } from 'react';
 import { IconButton } from '@/components/common/IconButton';
 import { Button } from '@/components/common/Button';
 import { Icon } from '@/components/common/Icon';
@@ -19,7 +19,19 @@ interface Props {
 export function Header({ onOpenGraph, onOpenAdmin, onOpenSettings }: Props) {
   const toggleSidebar = useSidebarStore((s) => s.toggleSidebar);
   const hasMessages = useChatStore((s) => s.messages.length > 0);
+  const resetChat = useChatStore((s) => s.resetChat);
   const { meta } = useAnnouncements();
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* noop */
+    }
+  };
 
   return (
     <header className="flex flex-shrink-0 items-center justify-between border-b border-line
@@ -28,13 +40,15 @@ export function Header({ onOpenGraph, onOpenAdmin, onOpenSettings }: Props) {
         <IconButton aria-label="사이드바 토글" onClick={toggleSidebar}>
           <Icon.Menu />
         </IconButton>
-        <CDLogo size="sm" />
+        <button onClick={resetChat} aria-label="메인 화면으로 이동" className="cursor-pointer">
+          <CDLogo size="sm" />
+        </button>
         <div className="flex flex-col leading-tight">
           <span className="text-[14.5px] font-semibold text-ink">
             청담 <span className="ml-1 text-[12px] font-medium text-ink-4">淸潭</span>
           </span>
           <span className="mt-0.5 hidden text-[11.5px] text-ink-3 sm:block">
-            경북대학교 공지사항 하이브리드 RAG 어시스턴트
+            경북대학교 공지사항 어시스턴트
           </span>
         </div>
       </div>
@@ -62,7 +76,9 @@ export function Header({ onOpenGraph, onOpenAdmin, onOpenSettings }: Props) {
             <Icon.Settings />
           </IconButton>
         )}
-        <Button variant="pill" leadingIcon={<Icon.Share />}>공유</Button>
+        <Button variant="pill" leadingIcon={<Icon.Share />} onClick={handleShare}>
+          {copied ? '복사됨' : '공유'}
+        </Button>
       </div>
     </header>
   );

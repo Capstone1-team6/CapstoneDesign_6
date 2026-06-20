@@ -80,7 +80,7 @@ export function ChatPage({ onOpenSettings, onOpenAdmin }: Props) {
         />
       )}
       <Sidebar onOpenSettings={onOpenSettings} />
-      <main className="relative z-[1] flex min-w-0 flex-1 flex-col">
+      <main className="relative z-[1] flex min-w-0 min-h-0 flex-1 flex-col">
         <Header
           onOpenGraph={handleOpenTopicGraph}
           onOpenAdmin={onOpenAdmin}

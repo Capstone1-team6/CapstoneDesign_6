@@ -30,7 +30,7 @@ export function MessageList(props: Props) {
   };
 
   return (
-    <div ref={ref} className="flex-1 overflow-y-auto">
+    <div ref={ref} className="flex-1 min-h-0 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4 px-4 pb-8 pt-7 sm:px-6">
         {messages.map((m) => (
           <MessageBubble

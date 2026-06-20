@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Icon } from './Icon';
 
 interface Props {
@@ -9,11 +9,17 @@ interface Props {
 }
 
 export function Toast({ message, show, onHide, duration = 2000 }: Props) {
+  const onHideRef = useRef(onHide);
+
+  useEffect(() => {
+    onHideRef.current = onHide;
+  }, [onHide]);
+  
   useEffect(() => {
     if (!show) return;
-    const timer = setTimeout(onHide, duration);
+    const timer = setTimeout(() => onHideRef.current(), duration);
     return () => clearTimeout(timer);
-  }, [show, duration, onHide]);
+  }, [show, duration]);
 
   return (
     <div

@@ -1,4 +1,3 @@
-// components/layout/Sidebar.tsx
 // 대화 히스토리 + 보관함 사이드바.
 
 import { useMemo } from 'react';
@@ -16,7 +15,7 @@ interface Props {
 
 export function Sidebar({ onOpenSettings }: Props) {
   const { isOpen, activeTab, setActiveTab, bookmarks, selectedSessionId, setSidebarOpen } = useSidebarStore();
-  const { resetChat } = useChatStore();
+  const resetChat = useChatStore((s) => s.resetChat);
 
   const closeMobile = () => { if (window.innerWidth < 640) setSidebarOpen(false); };
   const { sessions, openSession, deleteSession } = useChatHistory();
@@ -41,7 +40,9 @@ export function Sidebar({ onOpenSettings }: Props) {
     >
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-        <CDLogo size="sm" />
+        <button onClick={resetChat} aria-label="메인 화면으로 이동" className="cursor-pointer">
+          <CDLogo size="sm" />
+        </button>
         <div className="flex flex-col leading-tight">
           <span className="text-[17px] font-bold text-ink">
             청담<span className="ml-1.5 text-[11px] font-medium text-ink-4 tracking-wide">淸潭</span>

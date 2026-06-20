@@ -35,10 +35,10 @@ export function Header({ onOpenAdmin }: Props) {
             <button
               onClick={() => setSidebarOpen(true)}
               aria-label="사이드바 열기"
-              className="group relative flex h-8 w-8 flex-shrink-0 items-center justify-center cursor-pointer"
+              className="group relative flex h-10 w-10 flex-shrink-0 items-center justify-center cursor-pointer"
             >
               <span className="transition-opacity group-hover:opacity-0">
-                <CDLogo size="sm" />
+                <CDLogo size="header" />
               </span>
               <span className="absolute inset-0 flex items-center justify-center text-ink-2
                                 opacity-0 transition-opacity group-hover:opacity-100">
@@ -46,10 +46,10 @@ export function Header({ onOpenAdmin }: Props) {
               </span>
             </button>
             <div className="flex flex-col leading-tight">
-              <span className="text-[14.5px] font-semibold text-ink">
-                청담 <span className="ml-1 text-[12px] font-medium text-ink-4">淸潭</span>
+              <span className="text-[16px] font-semibold text-ink">
+                청담 <span className="ml-1 text-[14px] font-medium text-ink-4">淸潭</span>
               </span>
-              <span className="mt-0.5 hidden text-[11.5px] text-ink-3 sm:block">
+              <span className="mt-0.5 hidden text-[12px] text-ink-3 sm:block">
                 경북대학교 공지사항 어시스턴트
               </span>
             </div>

@@ -42,10 +42,9 @@ export function Sidebar({ onOpenSettings }: Props) {
           <CDLogo size="sm" />
         </button>
         <div className="flex flex-1 flex-col leading-tight">
-          <span className="text-[17px] font-bold text-ink">
-            청담<span className="ml-1.5 text-[11px] font-medium text-ink-4 tracking-wide">淸潭</span>
+          <span className="text-[18px] font-bold text-ink">
+            청담<span className="ml-1.5 text-[14px] font-medium text-ink-4 tracking-wide">淸潭</span>
           </span>
-          <span className="mt-0.5 text-[11px] text-ink-3">경북대 공지 어시스턴트</span>
         </div>
         <IconButton aria-label="사이드바 닫기" onClick={() => setSidebarOpen(false)}>
           <Icon.Sidebar />

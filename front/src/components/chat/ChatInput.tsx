@@ -53,7 +53,7 @@ export function ChatInput({ isStreaming, onSend, onAbort }: Props) {
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={onKey}
           rows={1}
-          placeholder="청담에게 학교 공지사항을 물어보세요..."
+          placeholder="청담에게 학교 공지사항을 물어보세요"
           disabled={isStreaming}
           className="min-h-6 flex-1 resize-none border-0 bg-transparent py-2 text-[14.5px]
                      leading-relaxed text-ink outline-none placeholder:text-ink-4
@@ -84,8 +84,7 @@ export function ChatInput({ isStreaming, onSend, onAbort }: Props) {
       </div>
       <div className="mt-2 text-center text-[11px] text-ink-4">
         <b className="font-semibold text-ink-3">Shift+Enter</b>로 줄바꿈, <b className="font-semibold text-ink-3">Enter</b>로 전송 ·
-        청담은 출처가 있는 답변만 드려요 <span className="text-brand-500">·</span>{' '}
-        <span className="font-medium text-brand-500">Hybrid RAG</span>
+        청담은 출처가 있는 답변만 드려요
       </div>
     </div>
   );

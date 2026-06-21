@@ -6,6 +6,7 @@ import subprocess
 import shutil
 import platform
 import tempfile
+import re
 import opendataloader_pdf
 import pandas as pd
 from docx import Document
@@ -713,6 +714,21 @@ def warn_if_empty(file_name, text):
         print(f"  [!경고] 추출 텍스트 매우 적음 ({len(text)}자) - 스캔본 가능성: {file_name}")
 
 
+def notice_id(notice):
+    wr_id = str(notice.get("wr_id") or "").strip()
+    if wr_id:
+        return wr_id
+    url = notice.get("url", "")
+    try:
+        return url.split("wr_id=")[1].split("&")[0]
+    except IndexError:
+        return str(notice.get("num") or "unknown")
+
+
+def notice_dir_name(notice):
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", notice_id(notice) or "unknown")
+
+
 def parse_all():
     """크롤링 첨부파일 파싱 (증분: 기존 결과가 있으면 재사용)"""
     notices_path = os.path.join(RAW_DIR, "notices.json")
@@ -728,10 +744,7 @@ def parse_all():
             with open(output_path, encoding="utf-8") as f:
                 prev = json.load(f)
             for n in prev:
-                try:
-                    wr = n["url"].split("wr_id=")[1].split("&")[0]
-                except (KeyError, IndexError):
-                    continue
+                wr = notice_dir_name(n)
                 existing[wr] = {
                     a["name"]: a.get("parsed_text", "")
                     for a in n.get("attachments", []) if a.get("name")
@@ -746,10 +759,7 @@ def parse_all():
     # PDF 배치 변환을 위해 처리 대상 PDF 경로 먼저 수집
     pdf_to_process = []
     for notice in notices:
-        try:
-            wr_id = notice["url"].split("wr_id=")[1].split("&")[0]
-        except (KeyError, IndexError):
-            continue
+        wr_id = notice_dir_name(notice)
         attach_dir = os.path.join(ATTACHMENT_DIR, wr_id)
         for att in notice.get("attachments", []):
             file_name = att["name"]
@@ -769,10 +779,7 @@ def parse_all():
         pdf_results = parse_pdf_batch(pdf_to_process)
 
     for notice in notices:
-        try:
-            wr_id = notice["url"].split("wr_id=")[1].split("&")[0]
-        except (KeyError, IndexError):
-            continue
+        wr_id = notice_dir_name(notice)
         attach_dir = os.path.join(ATTACHMENT_DIR, wr_id)
         attachments = notice.get("attachments", [])
 

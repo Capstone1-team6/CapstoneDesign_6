@@ -3,9 +3,14 @@ from bs4 import BeautifulSoup
 import json
 import os
 import time
+import re
+from urllib.parse import urljoin
 
-BASE_URL = "https://cse.knu.ac.kr/bbs/board.php"
-PARAMS = {"bo_table": "sub5_1", "lang": "kor"}
+CSE_BASE_URL = "https://cse.knu.ac.kr/bbs/board.php"
+CSE_PARAMS = {"bo_table": "sub5_1", "lang": "kor"}
+KNU_BASE_URL = "https://www.knu.ac.kr"
+KNU_BOARD_URL = f"{KNU_BASE_URL}/wbbs/wbbs/bbs/btin/list.action"
+KNU_PARAMS = {"bbs_cde": "1", "menu_idx": "67"}
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Referer": "https://cse.knu.ac.kr"
@@ -31,6 +36,10 @@ def notice_id(notice):
         return url.split("wr_id=")[1].split("&")[0]
     except IndexError:
         return ""
+
+
+def safe_notice_dir(notice):
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", notice_id(notice) or "unknown")
 
 
 def load_existing_notices():
@@ -66,11 +75,11 @@ def merge_notices(new_notices, existing_notices):
     return [merged[key] for key in order]
 
 
-def get_notice_list(page=1):
+def get_cse_notice_list(page=1):
     """공지사항 목록 한 페이지 크롤링"""
-    params = {**PARAMS, "page": page}
+    params = {**CSE_PARAMS, "page": page}
     try:
-        res = session.get(BASE_URL, params=params, timeout=10)
+        res = session.get(CSE_BASE_URL, params=params, timeout=10)
         res.raise_for_status()
         return res.text
     except requests.exceptions.RequestException as e:
@@ -78,7 +87,7 @@ def get_notice_list(page=1):
         return None
 
 
-def parse_notice_list(html):
+def parse_cse_notice_list(html):
     """목록 페이지에서 게시글 링크와 제목 추출"""
     soup = BeautifulSoup(html, "html.parser")
     notices = []
@@ -115,6 +124,7 @@ def parse_notice_list(html):
         notices.append({
             "num": num,
             "wr_id": wr_id,
+            "source": "cse",
             "title": title,
             "url": url,
             "date": date
@@ -123,7 +133,7 @@ def parse_notice_list(html):
     return notices
 
 
-def get_notice_detail(url):
+def get_cse_notice_detail(url):
     """게시글 상세 내용 + 첨부파일 URL 수집"""
     try:
         res = session.get(url, timeout=10)
@@ -158,6 +168,137 @@ def get_notice_detail(url):
         return None
 
 
+def get_knu_notice_list(page=1):
+    """경북대학교 본부 공지사항 목록 한 페이지 크롤링."""
+    params = {**KNU_PARAMS, "pageIndex": page}
+    try:
+        res = session.get(
+            KNU_BOARD_URL,
+            params=params,
+            headers={"Referer": KNU_BASE_URL},
+            timeout=10,
+        )
+        res.raise_for_status()
+        return res.text
+    except requests.exceptions.RequestException as e:
+        print(f"[오류] KNU 목록 페이지 {page} 요청 실패: {e}")
+        return None
+
+
+def parse_knu_notice_list(html):
+    """경북대학교 본부 공지 목록에서 게시글 링크와 제목 추출."""
+    soup = BeautifulSoup(html, "html.parser")
+    notices = []
+
+    for row in soup.select("table tbody tr"):
+        link = row.select_one("td.subject a[onclick*='doRead']")
+        if not link:
+            continue
+
+        onclick = link.get("onclick", "")
+        match = re.search(
+            r"doRead\('([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\)",
+            onclick,
+        )
+        if not match:
+            continue
+
+        doc_no, appl_no, bbs_cde, note_div = match.groups()
+        title = link.get_text(" ", strip=True)
+        url = urljoin(KNU_BOARD_URL, "viewBtin.action")
+        query = (
+            f"?btin.bbs_cde={bbs_cde}&btin.doc_no={doc_no}&btin.appl_no={appl_no}"
+            f"&btin.page=1&btin.search_type=&btin.search_text=&popupDeco="
+            f"&btin.note_div={note_div}&menu_idx=67"
+        )
+
+        num_td = row.select_one("td.num")
+        date_td = row.select_one("td.date")
+        writer_td = row.select_one("td.writer")
+
+        notices.append({
+            "num": num_td.get_text(strip=True) if num_td else "",
+            "wr_id": f"knu:{doc_no}",
+            "source": "knu",
+            "doc_no": doc_no,
+            "appl_no": appl_no,
+            "bbs_cde": bbs_cde,
+            "note_div": note_div,
+            "writer": writer_td.get_text(strip=True) if writer_td else "",
+            "title": title,
+            "url": url + query,
+            "date": date_td.get_text(strip=True).replace("/", "-") if date_td else "",
+        })
+
+    return notices
+
+
+def get_knu_notice_detail(notice):
+    """경북대학교 본부 게시글 상세 내용 + 첨부파일 URL 수집."""
+    try:
+        res = session.get(
+            notice["url"],
+            headers={"Referer": KNU_BOARD_URL},
+            timeout=10,
+        )
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        content_tag = soup.select_one(".board_cont")
+        content = content_tag.get_text(separator="\n", strip=True) if content_tag else ""
+
+        attachments = []
+        for a_tag in soup.select(".attach a[href*='doDownload']"):
+            href = a_tag.get("href", "")
+            match = re.search(
+                r"doDownload\('([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\)",
+                href,
+            )
+            if not match:
+                continue
+
+            doc_no, appl_no, file_nbr = match.groups()
+            file_name = a_tag.get_text(strip=True)
+            file_url = (
+                f"{KNU_BASE_URL}/wbbs/wbbs/bbs/btin/download.action"
+                f"?appFile.bbs_cde=1&appFile.doc_no={doc_no}"
+                f"&appFile.appl_no={appl_no}&appFile.file_nbr={file_nbr}"
+                f"&btin.bbs_cde=1&btin.doc_no={doc_no}&btin.appl_no={appl_no}"
+            )
+            attachments.append({"name": file_name, "url": file_url})
+
+        return {
+            "content": content,
+            "attachments": attachments,
+        }
+
+    except requests.exceptions.RequestException as e:
+        print(f"[오류] KNU 상세 페이지 요청 실패 ({notice.get('url')}): {e}")
+        return None
+
+
+NOTICE_SOURCES = [
+    {
+        "name": "cse",
+        "list": get_cse_notice_list,
+        "parse": parse_cse_notice_list,
+        "detail": lambda notice: get_cse_notice_detail(notice["url"]),
+    },
+    {
+        "name": "knu",
+        "list": get_knu_notice_list,
+        "parse": parse_knu_notice_list,
+        "detail": get_knu_notice_detail,
+    },
+]
+
+
+# Backward-compatible names for ad-hoc scripts that imported the old crawler API.
+get_notice_list = get_cse_notice_list
+parse_notice_list = parse_cse_notice_list
+get_notice_detail = get_cse_notice_detail
+
+
 def crawl(max_pages=3):
     """Crawl list pages and merge them into the existing notices.json."""
     all_notices = []
@@ -168,37 +309,39 @@ def crawl(max_pages=3):
     if existing_by_id:
         print(f"[existing] loaded {len(existing_by_id)} notices")
 
-    for page in range(1, max_pages + 1):
-        print(f"\n[page {page}] collect list")
-        html = get_notice_list(page)
+    for source in NOTICE_SOURCES:
+        print(f"\n[source] {source['name']}")
+        for page in range(1, max_pages + 1):
+            print(f"\n[{source['name']} page {page}] collect list")
+            html = source["list"](page)
 
-        if html is None:
-            print("[stop] request failed")
-            break
+            if html is None:
+                print("[stop] request failed")
+                break
 
-        notices = parse_notice_list(html)
+            notices = source["parse"](html)
 
-        if not notices:
-            print(f"[page {page}] parse failed")
-            with open(f"debug_page{page}.html", "w", encoding="utf-8") as f:
-                f.write(html)
-            print(f"  debug_page{page}.html saved")
-            break
+            if not notices:
+                print(f"[{source['name']} page {page}] parse failed")
+                with open(f"debug_{source['name']}_page{page}.html", "w", encoding="utf-8") as f:
+                    f.write(html)
+                print(f"  debug_{source['name']}_page{page}.html saved")
+                break
 
-        print(f"[page {page}] found {len(notices)} notices")
+            print(f"[{source['name']} page {page}] found {len(notices)} notices")
 
-        for i, notice in enumerate(notices):
-            key = notice_id(notice)
-            if key in existing_by_id:
-                print(f"  [{i+1}/{len(notices)}] cached: {notice['title'][:40]}")
-                notice = {**existing_by_id[key], **notice}
-            else:
-                print(f"  [{i+1}/{len(notices)}] new: {notice['title'][:40]}")
-                detail = get_notice_detail(notice["url"])
-                if detail:
-                    notice.update(detail)
-            all_notices.append(notice)
-            time.sleep(0.5)
+            for i, notice in enumerate(notices):
+                key = notice_id(notice)
+                if key in existing_by_id:
+                    print(f"  [{i+1}/{len(notices)}] cached: {notice['title'][:40]}")
+                    notice = {**existing_by_id[key], **notice}
+                else:
+                    print(f"  [{i+1}/{len(notices)}] new: {notice['title'][:40]}")
+                    detail = source["detail"](notice)
+                    if detail:
+                        notice.update(detail)
+                all_notices.append(notice)
+                time.sleep(0.5)
 
     if all_notices:
         merged_notices = merge_notices(all_notices, existing_notices)
@@ -229,11 +372,8 @@ def download_attachments(notices):
         if not attachments:
             continue
 
-        # 공지별 폴더 생성 (wr_id 기준)
-        try:
-            wr_id = notice["url"].split("wr_id=")[1].split("&")[0]
-        except IndexError:
-            continue
+        # 공지별 폴더 생성 (source-aware notice_id 기준)
+        wr_id = safe_notice_dir(notice)
 
         save_dir = os.path.join(ATTACHMENT_DIR, wr_id)
         os.makedirs(save_dir, exist_ok=True)
@@ -301,15 +441,8 @@ def download_attachments(notices):
 
 
 if __name__ == "__main__":
-    notices_path = "./data/raw/notices.json"
-
-    # 1. 크롤링 (이미 있으면 기존 파일 로드)
-    if os.path.exists(notices_path):
-        print("[로드] 기존 크롤링 데이터 사용")
-        with open(notices_path, encoding="utf-8") as f:
-            notices = json.load(f)
-    else:
-        notices = crawl(max_pages=3)
+    # 1. 크롤링 (기존 notices.json 이 있으면 새 공지와 병합)
+    notices = crawl(max_pages=3)
 
     # 2. 첨부파일 다운로드
     download_attachments(notices)

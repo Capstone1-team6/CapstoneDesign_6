@@ -15,7 +15,7 @@ export const EXAMPLE_QUESTIONS: ReadonlyArray<{
   title: string;
   hint: string;
 }> = [
-  { id: 'q-courses',     icon: 'Calendar', title: '2026학년도 1학기 수강신청 일정 알려줘', hint: '학사 · 일정' },
+  { id: 'q-courses',     icon: 'Calendar', title: '하계 계절학기 수강신청 일정 알려줘',    hint: '학사 · 일정' },
   { id: 'q-scholarship', icon: 'Coin',     title: '국가장학금 2학기 신청 방법은?',        hint: '장학 · 신청절차' },
   { id: 'q-graduation',  icon: 'Cap',      title: '컴퓨터학부 졸업 요건 알려줘',           hint: '학사 · 졸업' },
   { id: 'q-dorm',        icon: 'Home',     title: '기숙사 신청은 어떻게 해?',              hint: '생활 · 기숙사' },

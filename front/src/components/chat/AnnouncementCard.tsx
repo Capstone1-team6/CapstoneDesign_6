@@ -52,9 +52,9 @@ export function AnnouncementCard({ source, onPreview }: Props) {
         )}
         &rdquo;
       </div>
-      <div className="flex items-center gap-1.5 font-mono text-[11.5px] text-brand-500">
-        <Icon.Globe width={12} height={12} />
-        {source.url.replace(/^https?:\/\//, '')}
+      <div className="flex min-w-0 items-center gap-1.5 font-mono text-[11.5px] text-brand-500">
+        <Icon.Globe width={12} height={12} className="flex-shrink-0" />
+        <span className="truncate">{source.url.replace(/^https?:\/\//, '')}</span>
       </div>
     </button>
   );
